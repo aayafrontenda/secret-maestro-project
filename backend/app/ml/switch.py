@@ -92,6 +92,13 @@ class SwitchableMLClient:
     async def health(self) -> bool:
         return await self.current.health()
 
+    def suggester(self) -> MLClient | None:
+        """A client that can suggest operator replies: the active one if it can, else the ML service."""
+        for client in (self.current, self._clients.get("http")):
+            if client is not None and hasattr(client, "suggest"):
+                return client
+        return None
+
     async def aclose(self) -> None:
         for c in self._clients.values():
             try:

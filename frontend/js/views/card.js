@@ -17,6 +17,7 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
     dialog: null, checklist: null, evaluation: null, appeals: [], ids: [],
     pinned: null, hover: null, filter: null, evaluating: false, error: null,
     drafts: {}, decisions: {}, justLoaded: false, audio: null, offsets: [],
+    suggestions: {}, // `${evaluation_id}:${criterion_id}` -> { loading, data, error }
   };
 
   fill(root, h('div', { class: 'cqa-loading' }, icon('refresh', 16, 'cqa-spin'), 'Загружаем диалог…'));
@@ -494,7 +495,7 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
       style: { '--c': secColor(c.section), animationDelay: enterIdx != null ? `${enterIdx * 60}ms` : null },
       onmouseenter: () => { S.hover = c.id; applyHighlights(); },
       onmouseleave: () => { S.hover = null; applyHighlights(); },
-      onclick: e => { if (e.target.closest('.cqa-appeal, button, textarea')) return; setPinned(c.id); },
+      onclick: e => { if (e.target.closest('.cqa-appeal, .cqa-suggest, button, textarea')) return; setPinned(c.id); },
       onkeydown: e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === el) { e.preventDefault(); setPinned(c.id); } },
       'aria-expanded': String(open),
     });
@@ -532,12 +533,55 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
           r.confidence != null && h('span', { class: `cqa-conf ${r.confidence < 0.7 ? 'is-low' : ''}`, title: 'Уверенность модели' },
             h('i', { style: { '--v': `${Math.round(r.confidence * 100)}%` } }), `уверенность ${Math.round(r.confidence * 100)}%`),
           formula && h('span', { class: 'cqa-formula cqa-num' }, formula)),
+        failed(c, final) && suggestZone(c),
         S.role === 'operator' && !appeal && !S.drafts[c.id] && h('div', { class: 'cqa-row' },
           h('button', { class: 'cqa-btn cqa-btn--outline cqa-btn--sm', onclick: () => { S.drafts[c.id] = { comment: '' }; renderCrits(); applyHighlights(); focusDraft(c.id); } },
             icon('flag', 14), 'Оспорить оценку')),
         appealZone(c, r, appeal),
       ],
     );
+  }
+
+  // A criterion the operator missed: "no", a gross violation found, or a scale step below the top.
+  function failed(c, answer) {
+    if (answer == null || answer === 'na') return false;
+    if (c.type === 'flag') return answer === 'yes';
+    if (c.type === 'scale') return Number(answer) < scaleMax(c);
+    return answer === 'no';
+  }
+
+  // "How the operator could have replied": asked from the ML service on demand, kept per evaluation.
+  function suggestZone(c) {
+    const key = `${S.evaluation?.evaluation_id}:${c.id}`;
+    const st = S.suggestions[key];
+    const ask = async () => {
+      S.suggestions[key] = { loading: true };
+      renderCrits(); applyHighlights();
+      try {
+        S.suggestions[key] = { data: await api.suggestReply(S.evaluation.evaluation_id, c.id) };
+      } catch (e) {
+        S.suggestions[key] = { error: e.message };
+      }
+      renderCrits(); applyHighlights();
+    };
+    if (!st || st.error) {
+      return h('div', { class: 'cqa-suggest' },
+        st?.error && h('span', { class: 'cqa-err' }, st.error),
+        h('button', { class: 'cqa-btn cqa-btn--outline cqa-btn--sm', onclick: ask }, icon('spark', 14), 'Как можно было ответить'));
+    }
+    if (st.loading) {
+      return h('div', { class: 'cqa-suggest cqa-muted' }, icon('refresh', 14, 'cqa-spin'), ' Модель пишет пример ответа…');
+    }
+    const d = st.data;
+    const at = d.after_index;
+    return h('div', { class: 'cqa-suggest' },
+      h('div', { class: 'cqa-suggest-head' },
+        h('b', null, 'Пример ответа оператора'),
+        at != null && h('button', { class: 'cqa-ev', title: 'Перейти к реплике', onclick: ev => { ev.stopPropagation(); jumpTo(at); } },
+          h('span', { class: 'cqa-ev-ref' }, `после #${at + 1}`))),
+      h('blockquote', { class: 'cqa-suggest-text' }, d.reply),
+      d.change && h('p', { class: 'cqa-muted' }, d.change),
+      h('p', { class: 'cqa-muted cqa-suggest-note' }, `Черновик модели ${d.model}: факты в [скобках] оператор подставляет сам.`));
   }
 
   function focusDraft(cid) { requestAnimationFrame(() => critEl.querySelector(`[data-draft="${cid}"]`)?.focus()); }

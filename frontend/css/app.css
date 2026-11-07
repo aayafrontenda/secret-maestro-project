@@ -249,6 +249,16 @@
 .cqa-conf.is-low { color: var(--cqa-amber-ink); }
 .cqa-conf.is-low i::after { background: var(--cqa-amber); }
 
+/* suggested operator reply for a failed criterion */
+.cqa-suggest { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; font-size: 13px; cursor: default; }
+.cqa-suggest-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.cqa-suggest-head .cqa-ev { width: auto; min-height: 26px; padding: 2px 8px; }
+.cqa-suggest-text {
+  margin: 0; padding: 10px 12px; border-left: 3px solid var(--cqa-green-2); border-radius: 0 10px 10px 0;
+  background: var(--cqa-mint-bg); font-size: 14px; line-height: 1.5; color: var(--cqa-ink); white-space: pre-wrap; align-self: stretch;
+}
+.cqa-suggest-note { font-size: 12px; }
+
 /* апелляции */
 .cqa-appeal { border-radius: var(--cqa-r-md); background: var(--cqa-surface); padding: 12px; display: flex; flex-direction: column; gap: 10px; cursor: default; }
 .cqa-appeal-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--cqa-ink-2); flex-wrap: wrap; }

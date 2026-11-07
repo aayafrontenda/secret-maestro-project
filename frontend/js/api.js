@@ -119,6 +119,9 @@ const httpApi = {
   markReviewed: (evaluation_id, body = {}) => req(`/evaluations/${evaluation_id}/review`, { method: 'POST', body }).then(normEvaluation),
   unmarkReviewed: evaluation_id => req(`/evaluations/${evaluation_id}/review`, { method: 'DELETE' }).then(normEvaluation),
 
+  // The operator message that would have met a failed criterion (written by the ML service).
+  suggestReply: (evaluation_id, criterion_code) => req(`/evaluations/${evaluation_id}/suggest`, { method: 'POST', body: { criterion_code } }),
+
   // Evaluation providers: cloud, local ML service, demo; switchable at runtime.
   getML: () => req('/ml'),
   setML: provider => req('/ml', { method: 'PUT', body: { provider } }),

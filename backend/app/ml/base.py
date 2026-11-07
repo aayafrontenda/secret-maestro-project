@@ -26,7 +26,15 @@ class GatedMLClient:
         self.name = inner.name
 
     def __getattr__(self, item):
-        return getattr(self._inner, item)
+        attr = getattr(self._inner, item)
+        if item == "suggest":
+            # Optional capability (the ML service has it, other providers do not): gate it too.
+            async def gated_suggest(request):
+                async with self._gate:
+                    return await attr(request)
+
+            return gated_suggest
+        return attr
 
     async def evaluate(self, request: MLEvaluateRequest) -> MLEvaluateResponse:
         async with self._gate:

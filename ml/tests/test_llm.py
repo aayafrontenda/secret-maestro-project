@@ -73,6 +73,33 @@ def test_client_errors_are_not_retried(monkeypatch):
         client.complete("s", "u", {})
 
 
+def test_a_cloud_model_out_of_credit_hands_over_to_the_local_one(monkeypatch):
+    from maestro.llm import FallbackClient, LLMResponse, OpenAIClient
+
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.path)
+        return httpx.Response(402, json={"error": {"message": "billing required"}})
+
+    monkeypatch.setattr(llm_module, "RETRY_DELAYS", (0.0, 0.0))
+    cloud = OpenAIClient(model="cloud", api_key="k")
+    cloud.http = httpx.Client(transport=httpx.MockTransport(handler))
+
+    class Local:
+        model = "local"
+
+        def complete(self, system, user, schema, think=None):
+            return LLMResponse(content="{}", duration_ms=1)
+
+    client = FallbackClient(cloud, Local())
+    assert client.complete("s", "u", {}).content == "{}"
+    assert len(calls) == 1  # 402 is final: no retries
+    assert client.model == "local"
+    client.complete("s", "u", {})
+    assert len(calls) == 1  # the cloud model is skipped during the cooldown
+
+
 def test_cut_off_answer_is_repeated_with_a_larger_limit():
     sent = []
     replies = iter([{**OK, "done_reason": "length"}, OK])

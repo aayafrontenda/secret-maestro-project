@@ -19,6 +19,16 @@ from app.services import handoff
 from app.services.checklists import ensure_default_checklist
 from app.services.queue import EvaluationQueue
 
+
+class RevalidatedStaticFiles(StaticFiles):
+    """The frontend changes during the demo: browsers and the Cloudflare edge must check for a new
+    version on every load (a cheap 304 when nothing changed) instead of serving a stale copy for hours."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
 log = logging.getLogger(__name__)
 
 
@@ -118,7 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     frontend = Path(settings.frontend_dir or BACKEND_ROOT.parent / "frontend")
     if settings.serve_frontend and (frontend / "index.html").is_file():
         # Mounted last, so /api and /docs win; everything else is the static frontend.
-        app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
+        app.mount("/", RevalidatedStaticFiles(directory=frontend, html=True), name="frontend")
         log.info("serving frontend from %s", frontend)
     else:
 

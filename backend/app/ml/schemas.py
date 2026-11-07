@@ -73,6 +73,29 @@ class MLUsage(BaseModel):
     pii_masked: int = 0
 
 
+class MLSuggestRequest(BaseModel):
+    """POST /suggest: the operator message that would have met a failed criterion."""
+
+    conversation_id: str
+    channel: str
+    language: str
+    transcript: list[MLTranscriptMessage]
+    criterion: MLCriterion
+    answer: str | int | float
+    explanation: str = ""
+    evidence: list[int] = Field(default_factory=list)
+    checked_range: MLRange | None = None
+
+
+class MLSuggestResponse(BaseModel):
+    code: str
+    reply: str
+    after_index: int | None = None
+    change: str = ""
+    model: str = "unknown"
+    duration_ms: int | None = None
+
+
 class MLEvaluateResponse(BaseModel):
     conversation_id: str | None = None
     results: list[MLCriterionResult]

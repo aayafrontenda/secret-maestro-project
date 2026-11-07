@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import time
@@ -10,6 +11,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import httpx
+
+log = logging.getLogger("maestro")
 
 # On 19 hand-labelled DEV dialogs (before the ml/openai-comparison rule changes): qwen3.5:9b agreed
 # with the labels on 82.2% of answers at about 24 s per dialog; qwen3.5:4b on 71.1% at about 14 s
@@ -167,7 +170,8 @@ class OpenAIClient:
                         self._unsupported.add(param)
                         continue
                     raise LLMUnavailable(f"OpenAI rejected the request (400): {response.text[:300]}")
-                if response.status_code in (401, 403, 404):
+                # No key, no credit (402), no access or no such model: retrying cannot help.
+                if response.status_code in (401, 402, 403, 404):
                     raise LLMUnavailable(f"OpenAI rejected the request ({response.status_code}): {response.text[:300]}")
                 if response.status_code < 400:
                     data = response.json()
@@ -316,6 +320,34 @@ class OllamaClient:
             prompt_tokens=prompt_tokens,
             completion_tokens=data.get("eval_count"),
         )
+
+
+class FallbackClient:
+    """Use `primary`; when it is unavailable (no key, no credit, no network), use `fallback`.
+
+    After a failure the primary is skipped for `cooldown_s`, so a dead cloud model does not add its
+    retry delays to every call. `model` names the client that answers now.
+    """
+
+    def __init__(self, primary: LLMClient, fallback: LLMClient, cooldown_s: float = 600):
+        self.primary = primary
+        self.fallback = fallback
+        self.cooldown_s = cooldown_s
+        self._down_until = 0.0
+
+    @property
+    def model(self) -> str:
+        return self.fallback.model if time.monotonic() < self._down_until else self.primary.model
+
+    def complete(self, system: str, user: str, schema: dict[str, Any], think: bool | None = None) -> LLMResponse:
+        if time.monotonic() >= self._down_until:
+            try:
+                return self.primary.complete(system, user, schema, think)
+            except LLMUnavailable as exc:
+                self._down_until = time.monotonic() + self.cooldown_s
+                log.warning("%s is unavailable, using %s for %.0f s: %s",
+                            self.primary.model, self.fallback.model, self.cooldown_s, exc)
+        return self.fallback.complete(system, user, schema, think)
 
 
 def client_from_env() -> "LLMClient":

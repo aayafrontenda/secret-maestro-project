@@ -218,6 +218,7 @@ export const mockApi = {
   async getHandoffs() { throw new Error('Раздел работает только с бэкендом (USE_MOCKS: false)'); },
   async analyzeHandoffs() { throw new Error('Раздел работает только с бэкендом'); },
   async getDialogHandoff() { return null; },
+  async suggestReply() { throw new Error('Подсказки пишет ML-сервис: включите бэкенд (USE_MOCKS: false)'); },
   knowledgeUrl: () => null,
 
   // ---------- служебное ----------

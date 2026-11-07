@@ -5,7 +5,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 
 from app.api import serializers as ser
-from app.api.deps import QueueDep, SessionDep, SettingsDep
+from app.api.deps import MLDep, QueueDep, SessionDep, SettingsDep
+from app.ml.base import MLClientError
+from app.ml.schemas import MLCriterion, MLSuggestRequest, MLTranscriptMessage
 from app.models import Dialog, Evaluation
 from app.models.appeal import AppealStatus
 from app.models.evaluation import EvaluationStatus
@@ -206,6 +208,73 @@ async def review_evaluation(
     evaluation_service.mark_reviewed(ev, by=body.by, note=body.note)
     await session.commit()
     return ser.evaluation(await _get_or_404(session, evaluation_id))
+
+
+class SuggestBody(BaseModel):
+    criterion_code: str = Field(description="The failed criterion, e.g. c07")
+
+
+# Suggestions are cheap to keep and slow to make (one model call): one per (evaluation, criterion).
+_suggestions: dict[tuple[int, str], dict] = {}
+
+
+def _failed(spec: dict, answer) -> bool:
+    if spec.get("is_flag"):
+        return answer == "yes"
+    if spec.get("answer_type") == "scale":
+        top = spec.get("scale_max") or max(
+            (int(s["value"]) for s in spec.get("scale_steps") or [] if "value" in s), default=0
+        )
+        return isinstance(answer, int | float) and answer < top
+    return answer == "no"
+
+
+@router.post("/{evaluation_id}/suggest")
+async def suggest_reply(evaluation_id: int, body: SuggestBody, session: SessionDep, ml: MLDep):
+    """The operator message that would have met a failed criterion, written by the ML service."""
+    ev = await _get_or_404(session, evaluation_id)
+    key = (ev.id, body.criterion_code)
+    if key in _suggestions:
+        return _suggestions[key]
+    result = next((r for r in ev.results if r.criterion_code == body.criterion_code), None)
+    spec = next(
+        (c for c in ev.checklist_snapshot.get("criteria", []) if c.get("code") == body.criterion_code),
+        None,
+    )
+    if result is None or spec is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Критерий {body.criterion_code} не найден")
+    if not _failed(spec, result.final_answer):
+        raise HTTPException(status.HTTP_409_CONFLICT, "Критерий выполнен: подсказка не нужна")
+    client = ml.suggester() if hasattr(ml, "suggester") else (ml if hasattr(ml, "suggest") else None)
+    if client is None:
+        raise HTTPException(
+            status.HTTP_501_NOT_IMPLEMENTED, "Подсказки пишет ML-сервис: задайте ML_SERVICE_URL"
+        )
+    d = ev.dialog
+    request = MLSuggestRequest(
+        conversation_id=d.id,
+        channel=d.channel,
+        language=d.language,
+        transcript=[MLTranscriptMessage(**m) for m in d.transcript],
+        criterion=MLCriterion(**{k: v for k, v in spec.items() if k != "position"}),
+        answer=result.final_answer,
+        explanation=result.explanation,
+        evidence=[e["message_index"] for e in result.evidence],
+        checked_range=result.checked_range,
+    )
+    try:
+        out = await client.suggest(request)
+    except MLClientError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Подсказка не получена: {exc}") from exc
+    data = {
+        "criterion_id": body.criterion_code,
+        "reply": out.reply,
+        "after_index": out.after_index,
+        "change": out.change,
+        "model": out.model,
+    }
+    _suggestions[key] = data
+    return data
 
 
 @router.delete("/{evaluation_id}/review")

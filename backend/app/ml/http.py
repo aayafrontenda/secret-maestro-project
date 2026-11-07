@@ -5,7 +5,12 @@ import httpx
 from pydantic import ValidationError
 
 from app.ml.base import MLClientError
-from app.ml.schemas import MLEvaluateRequest, MLEvaluateResponse
+from app.ml.schemas import (
+    MLEvaluateRequest,
+    MLEvaluateResponse,
+    MLSuggestRequest,
+    MLSuggestResponse,
+)
 
 log = logging.getLogger(__name__)
 
@@ -50,6 +55,19 @@ class HttpMLClient:
         raise MLClientError(
             f"ML service unavailable after {self._max_retries + 1} attempts: {last_exc}"
         )
+
+    async def suggest(self, request: MLSuggestRequest) -> MLSuggestResponse:
+        """One attempt: the user is waiting on the dialog card and can press the button again."""
+        try:
+            resp = await self._client.post("/suggest", json=request.model_dump(mode="json"))
+        except httpx.HTTPError as exc:
+            raise MLClientError(f"ML service unavailable: {exc}") from exc
+        if resp.status_code >= 400:
+            raise MLClientError(f"ML service error {resp.status_code}: {resp.text[:500]}")
+        try:
+            return MLSuggestResponse.model_validate(resp.json())
+        except (ValueError, ValidationError) as exc:
+            raise MLClientError(f"ML service returned an invalid response: {exc}") from exc
 
     async def health(self) -> bool:
         try:
