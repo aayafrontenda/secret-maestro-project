@@ -15,11 +15,11 @@ from .schemas import Role
 
 GREETING = re.compile(
     r"\b(здравствуй\w*|добр(ый|ое|ого) (день|вечер|утро|времени)|приветствую|сәлем\w*|салем\w*|армысыз|"
-    r"қайырлы (күн|таң|кеш)|hello|hi|good (morning|afternoon|evening))\b",
+    r"қайырлы (күн|таң|кеш)|кайырлы (кун|тан|кеш)|salem\w*|qayirli \w+|hello|hi|good (morning|afternoon|evening))\b",
     re.IGNORECASE,
 )
 INTRODUCTION = re.compile(
-    r"(меня зовут|менің атым|my name is|\[имя скрыто\]|\[name hidden\])",
+    r"(меня зовут|менің атым|менин атым|menin atym|my name is|\[имя скрыто\]|\[name hidden\])",
     re.IGNORECASE,
 )
 IDENTITY_VERIFIED = re.compile(
@@ -49,7 +49,11 @@ OPERATOR_REQUEST = re.compile(
 # An operator asking for details: a question or a request to tell something.
 CLARIFYING = re.compile(
     r"(\?|уточн\w*|укаж\w*|напиш\w*|подскаж\w*|сообщ\w*|назов\w*|пришл\w*|нақтыла\w*|айтыңыз|жазыңыз|"
-    r"көрсетіңіз|\bspecify\b|\btell me\b|\blet me know\b|\bplease (send|share|confirm)\b)",
+    r"көрсетіңіз|\bspecify\b|\btell me\b|\blet me know\b|\bplease (send|share|confirm)\b|"
+    # A question without a question mark: a question word at the start of a sentence, or a Kazakh question particle.
+    r"(^|[.!]\s+)(как(ой|ая|ое|ие|им)|где|когда|куда|откуда|сколько|почему|зачем|чем|вы\s|у вас\s|"
+    r"қай|қандай|қашан|қалай|қайда|неше|неге|which|what|where|when|how|why|do you|are you|can you)\b|"
+    r"\w+\s(ма|ме|ба|бе|па|пе)(\s|$|[.,!]))",
     re.IGNORECASE,
 )
 # A closing offer of further help is a question but not a clarification. An opening "С чем помочь?" is one.
@@ -60,6 +64,7 @@ HELP_OFFER = re.compile(
 )
 GOODBYE = re.compile(
     r"(до свидания|всего (доброго|хорошего)|хорошего (дня|вечера)|сау болыңыз|сау бол\b|қош болыңыз|"
+    r"\bsau bol\w*|\bkosh bol\w*|"
     r"\bgoodbye\b|\bbye\b|have a (nice|good|great) (day|evening))",
     re.IGNORECASE,
 )

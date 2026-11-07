@@ -257,3 +257,39 @@ def test_an_opening_question_counts_as_clarification_even_if_the_client_leaves()
     answers = {**GOOD, "enough_info_from_start": False, "used_known_details": ("M2", True), "clarified_missing": ("M2", True)}
     result = score_transcript(chat, FakeLLM(answers))
     assert {c.criterion_id: c.answer for c in result.criteria}["02"] == "yes"
+
+
+def test_phrases_in_latin_kazakh_and_questions_without_marks():
+    from maestro.rules import CLARIFYING, GOODBYE, GREETING, INTRODUCTION
+
+    assert GREETING.search("Salemetsiz be, menin atym Dana") and INTRODUCTION.search("Salemetsiz be, menin atym Dana")
+    assert GOODBYE.search("Sau boliniz!")
+    for question in ["Какой у вас логин", "Қай сайттан кірдіңіз", "Сізге нұсқаулық керек пе", "Which app are you using"]:
+        assert CLARIFYING.search(question), question
+    for guess in ["Переустановите приложение.", "Ну, тогда сайт.", "Мен Айгерім. Котировки бөлімін ашыңыз."]:
+        assert not CLARIFYING.search(guess), guess
+
+
+def test_clarification_without_a_question_mark_counts():
+    chat = _chat([
+        {"role": "client", "text": "Не могу войти."},
+        {"role": "operator", "text": "Здравствуйте, я Антон. Какой у вас логин"},
+        {"role": "client", "text": "anton77"},
+        {"role": "operator", "text": "Сбросьте пароль по ссылке на экране входа."},
+    ])
+    answers = {**GOOD, "enough_info_from_start": False, "used_known_details": ("M2", True), "clarified_missing": ("M2", True)}
+    assert {c.criterion_id: c.answer for c in score_transcript(chat, FakeLLM(answers)).criteria}["02"] == "yes"
+
+
+def test_latin_kazakh_client_is_checked_by_the_model():
+    from maestro.facts import extract_facts
+    from maestro.probes import Context
+    from maestro.rules import c01
+
+    chat = _chat([
+        {"role": "client", "text": "salem, shotqa aqsha tuspedi"},
+        {"role": "operator", "text": "Здравствуйте, меня зовут Алина. Проверю."},
+    ])
+    llm = FakeLLM({**GOOD, "client_language_used": ("M2", False)})
+    decision = c01(Context(transcript=chat, facts=extract_facts(chat, "kk"), llm=llm))
+    assert "client_language_used" in llm.calls and decision.answer == "no"
