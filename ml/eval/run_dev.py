@@ -58,6 +58,8 @@ def main() -> int:
     parser.add_argument("--backend", choices=["ollama", "openai"], default="ollama")
     parser.add_argument("--reasoning", help="OpenAI reasoning_effort, e.g. low or none")
     parser.add_argument("--think-on", help="thinking only for these criteria/probes, e.g. 04,06,07 (sets MAESTRO_THINK_ON)")
+    parser.add_argument("--generic-model", help="separate model for criteria without built-in rules (OpenAI-compatible)")
+    parser.add_argument("--generic-url", help="API URL for --generic-model (default: MAESTRO_OPENAI_URL)")
     parser.add_argument("--workers", type=int, default=1, help="dialogs scored in parallel (cloud backends)")
     parser.add_argument("--price-in", type=float, help="USD per 1M prompt tokens, for the cost line")
     parser.add_argument("--price-out", type=float, help="USD per 1M completion tokens, for the cost line")
@@ -88,6 +90,9 @@ def main() -> int:
         llm = OpenAIClient.from_env(model=args.model, reasoning_effort=args.reasoning)
     else:
         llm = OllamaClient.from_env(model=args.model)
+    generic_llm = None
+    if args.generic_model:
+        generic_llm = OpenAIClient.from_env(model=args.generic_model, url=args.generic_url)
     status = llm.health()
     if not status["ok"]:
         print(f"error: {status['error']}", file=sys.stderr)
@@ -111,7 +116,7 @@ def main() -> int:
     def run_one(record: dict):
         request = to_request(record, criteria)
         try:
-            return request, evaluate(request, llm), None
+            return request, evaluate(request, llm, generic_llm), None
         except (LLMOutputError, LLMUnavailable) as exc:
             return request, None, exc
 

@@ -303,3 +303,27 @@ class OllamaClient:
             prompt_tokens=prompt_tokens,
             completion_tokens=data.get("eval_count"),
         )
+
+
+def client_from_env() -> "LLMClient":
+    """The main client: MAESTRO_BACKEND=ollama (default) or openai (OpenAI or any OpenAI-compatible API)."""
+    if os.getenv("MAESTRO_BACKEND", "ollama").lower() == "openai":
+        return OpenAIClient.from_env()
+    return OllamaClient.from_env()
+
+
+def generic_client_from_env() -> "LLMClient | None":
+    """Optional separate model for criteria without built-in rules (the generic evaluator).
+
+    MAESTRO_GENERIC_MODEL names it; MAESTRO_GENERIC_URL and MAESTRO_GENERIC_API_KEY default to the
+    OpenAI settings. Unset: the main client scores those criteria too.
+    """
+    model = os.getenv("MAESTRO_GENERIC_MODEL")
+    if not model:
+        return None
+    return OpenAIClient(
+        model=model,
+        api_key=os.getenv("MAESTRO_GENERIC_API_KEY") or os.getenv("OPENAI_API_KEY", ""),
+        url=os.getenv("MAESTRO_GENERIC_URL") or os.getenv("MAESTRO_OPENAI_URL", "https://api.openai.com/v1"),
+        reasoning_effort=os.getenv("MAESTRO_GENERIC_REASONING") or None,
+    )

@@ -205,3 +205,16 @@ def test_generic_na_condition_takes_priority():
     llm = FakeLLM({**ANSWERS, "generic": {"na_applies": True, "answer": "no", "evidence": [], "explanation": "ok"}})
     response = evaluate(request([Criterion(**c) for c in checklist]), llm)
     assert next(r for r in response.results if r.code == "c5").answer == "na"
+
+
+def test_generic_criteria_can_use_a_separate_model():
+    checklist = [dict(c) for c in CHECKLIST]
+    checklist[4] = {**checklist[4], "title": "Извинение", "rule": "Да — оператор извинился за неудобство."}
+    main = FakeLLM(ANSWERS)
+    strong = FakeLLM({"generic": {"answer": "yes", "evidence": [], "explanation": "ok"}})
+    strong.model = "strong"
+    response = evaluate(request([Criterion(**c) for c in checklist]), main, strong)
+    assert strong.calls == ["generic"]
+    assert "generic" not in main.calls and main.calls
+    assert response.model.generic_name == "strong"
+    assert response.usage.calls == len(main.calls) + len(strong.calls)

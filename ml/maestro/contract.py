@@ -74,6 +74,7 @@ class CriterionResult(BaseModel):
 class ModelInfo(BaseModel):
     provider: str = "ollama"
     name: str
+    generic_name: str | None = Field(default=None, description="Model used for criteria without built-in rules, if different")
 
 
 class Usage(BaseModel):
@@ -188,13 +189,21 @@ def _generic_result(ctx: Context, criterion: Criterion, language: str, others: l
     )
 
 
-def evaluate(request: EvaluateRequest, llm: LLMClient) -> EvaluateResponse:
-    """Answer every criterion of the request. Raises LLMUnavailable or LLMOutputError on failure."""
+def evaluate(request: EvaluateRequest, llm: LLMClient, generic_llm: LLMClient | None = None) -> EvaluateResponse:
+    """Answer every criterion of the request. Raises LLMUnavailable or LLMOutputError on failure.
+
+    `generic_llm`, if given, scores the criteria without built-in rules (usually a stronger model);
+    the built-in criteria keep using `llm`.
+    """
     started = time.perf_counter()
     language = LANGUAGES.get(request.language.strip().upper(), "ru")
     transcript = to_transcript(request)
     ctx = Context(
         transcript=transcript, facts=extract_facts(transcript, language), llm=llm, channel=request.channel
+    )
+    # Same chat and the same trace list (so usage counts both models), another model.
+    gctx = ctx if generic_llm is None else Context(
+        transcript=transcript, facts=ctx.facts, llm=generic_llm, channel=request.channel, traces=ctx.traces
     )
 
     results = []
@@ -204,13 +213,13 @@ def evaluate(request: EvaluateRequest, llm: LLMClient) -> EvaluateResponse:
             results.append(_standard_result(ctx, criterion, preset_id, language))
         else:
             others = [c.title for c in request.criteria if c.code != criterion.code and c.title]
-            results.append(_generic_result(ctx, criterion, language, others))
+            results.append(_generic_result(gctx, criterion, language, others))
 
     traces = [t for attempts in ctx.traces.values() for t in attempts]
     return EvaluateResponse(
         conversation_id=request.conversation_id,
         results=results,
-        model=ModelInfo(name=llm.model),
+        model=ModelInfo(name=llm.model, generic_name=generic_llm.model if generic_llm is not None else None),
         usage=Usage(
             prompt_tokens=sum(t.prompt_tokens or 0 for t in traces),
             completion_tokens=sum(t.completion_tokens or 0 for t in traces),
