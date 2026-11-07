@@ -14,14 +14,18 @@ from fastapi.responses import JSONResponse
 
 from .contract import EvaluateRequest, EvaluateResponse, evaluate
 from .ingest import IngestError
-from .llm import LLMClient, LLMOutputError, LLMUnavailable, OllamaClient
+from .llm import LLMClient, LLMOutputError, LLMUnavailable, client_from_env, generic_client_from_env
 
 log = logging.getLogger("maestro")
 
 
-def create_app(client_factory: Callable[[], LLMClient] = OllamaClient.from_env) -> FastAPI:
+def create_app(
+    client_factory: Callable[[], LLMClient] = client_from_env,
+    generic_factory: Callable[[], LLMClient | None] = generic_client_from_env,
+) -> FastAPI:
     app = FastAPI(title="MAESTRO ML service", version="0.2.0")
     llm = client_factory()
+    generic_llm = generic_factory()
     # One GPU: run model calls one chat at a time. The backend's workers simply wait here.
     gpu = threading.Lock()
 
@@ -38,7 +42,7 @@ def create_app(client_factory: Callable[[], LLMClient] = OllamaClient.from_env) 
             raise HTTPException(422, "criteria list is empty")
         with gpu:
             try:
-                response = evaluate(request, llm)
+                response = evaluate(request, llm, generic_llm)
             except IngestError as exc:
                 raise HTTPException(422, str(exc)) from exc
             except LLMUnavailable as exc:

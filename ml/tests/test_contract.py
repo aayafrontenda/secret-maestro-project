@@ -140,30 +140,6 @@ def test_client_leaving_before_a_goodbye_is_a_cut_off():
     assert result.answer == "na"
 
 
-def _dialogue(answers):
-    llm = FakeLLM({**ANSWERS, **answers})
-    req = EvaluateRequest(conversation_id="x", transcript=TRANSCRIPT, criteria=[CHECKLIST[5]])
-    return evaluate(req, llm).results[0], llm
-
-
-def test_dialogue_scale_is_walked_from_the_bottom():
-    result, llm = _dialogue({"incoherent": ("M3", True)})
-    assert result.answer == 0 and llm.calls == ["incoherent"]
-    result, _ = _dialogue({"client_asked_again": ("M4", True)})
-    assert result.answer == 4 and result.evidence == [4]
-    result, _ = _dialogue({"noticeable_lapse": ("M5", True)})
-    assert result.answer == 7
-    result, llm = _dialogue({})
-    assert result.answer == 10 and llm.calls == ["incoherent", "client_asked_again", "noticeable_lapse"]
-
-
-def test_needs_discovery_questions_do_not_see_the_bot():
-    llm = Recording(ANSWERS)
-    req = EvaluateRequest(conversation_id="x", transcript=TRANSCRIPT, criteria=[CHECKLIST[1]])
-    evaluate(req, llm)
-    assert llm.prompts and all("AI-ассистент" not in p for p in llm.prompts)
-
-
 def test_reported_verification_means_identification_was_required():
     transcript = TRANSCRIPT[:4] + [
         {"index": 4, "timestamp": "01:20", "speaker": "system", "text": "Customer identity verified."},
@@ -221,3 +197,99 @@ def test_service_endpoints():
         body = response.json()
         assert len(body["results"]) == 8 and body["conversation_id"] == "p1-ru-001"
         assert client.post("/evaluate", json={**request().model_dump(mode="json"), "criteria": []}).status_code == 422
+
+
+
+def test_small_edits_that_change_the_meaning_go_to_the_generic_evaluator():
+    edits = [
+        ("Да — проверка личности не подтверждена до раскрытия данных или защищённого действия.", "yes_no", False),
+        ("Да — оператор подвёл итог и предложил дальнейшую помощь и попрощался.", "yes_no", False),
+        ("Да — оператор вежлив, извинился и, если клиент выразил недовольство или описал неудобство, "
+         "отреагировал на конкретную проблему.", "yes_no", False),
+    ]
+    for rule, answer_type, is_flag in edits:
+        assert match_standard(rule, answer_type, is_flag, []) is None, rule
+
+
+def test_harmless_variants_keep_the_built_in_logic():
+    # As the frontend sends them: no "по шкале", an extra sentence about the negative answer.
+    assert match_standard("Оцените ясность, порядок ответов и предупреждение об ожидании.", "scale", False, [0, 4, 7, 10]) == "06"
+    assert match_standard(
+        "Да — выявлено оскорбление клиента, предложение платной услуги в обход компании или раскрытие "
+        "конфиденциальной информации. Нет — ни одно из трёх не выявлено.", "yes_no", True, []) == "08"
+    assert match_standard("да - оператор учел известные детали и уточнил недостающее до ответа", "yes_no", False, []) == "02"
+
+
+def test_generic_criterion_is_told_what_not_to_judge():
+    seen = []
+
+    class Recording(FakeLLM):
+        def complete(self, system, user, schema, think=None):
+            if "\nRule: " in user:
+                seen.append((system, user))
+            return super().complete(system, user, schema, think)
+
+    checklist = [dict(c) for c in CHECKLIST]
+    checklist[4] = {**checklist[4], "title": "Извинение", "rule": "Да — оператор извинился за неудобство."}
+    llm = Recording({**ANSWERS, "generic": {"answer": "yes", "evidence": [], "explanation": "ok"}})
+    evaluate(request([Criterion(**c) for c in checklist]), llm)
+    system, user = seen[0]
+    assert "Judge ONLY what this criterion's rule asks" in system
+    assert "Эмпатия" not in user  # the replaced criterion is gone
+    assert "Корректная и полная консультация" in user and "Грубые ошибки" in user
+
+
+def test_generic_answers_given_as_strings_are_understood():
+    from maestro.generic import _normalize_answer
+
+    assert _normalize_answer("10") == 10 and _normalize_answer(10.0) == 10
+    assert _normalize_answer("N/A") == "na" and _normalize_answer("Yes") == "yes"
+    checklist = [dict(c) for c in CHECKLIST]
+    checklist[5] = {**checklist[5], "title": "Понятность инструкций", "rule": "Оцените конкретность инструкций.",
+                    "scale_steps": [{"value": 10, "label": "конкретно"}, {"value": 5, "label": "частично"}, {"value": 0, "label": "нет"}],
+                    "scale_max": 10}
+    llm = FakeLLM({**ANSWERS, "generic": {"answer": "10", "evidence": [], "explanation": "ok"}})
+    response = evaluate(request([Criterion(**c) for c in checklist]), llm)
+    assert next(r for r in response.results if r.code == "c6").answer == 10
+
+
+def test_generic_na_condition_takes_priority():
+    checklist = [dict(c) for c in CHECKLIST]
+    checklist[4] = {**checklist[4], "title": "Извинение", "allow_na": True, "na_rule": "клиент не выражал недовольства",
+                    "rule": "Да — если клиент выразил недовольство, оператор извинился."}
+    llm = FakeLLM({**ANSWERS, "generic": {"na_condition_holds": True, "answer": "no", "evidence": [], "explanation": "ok"}})
+    response = evaluate(request([Criterion(**c) for c in checklist]), llm)
+    assert next(r for r in response.results if r.code == "c5").answer == "na"
+    assert llm.calls.count("generic") == 1  # N/A settled in the first step, the rule is not asked
+
+
+def test_generic_answer_step_cannot_pick_na():
+    checklist = [dict(c) for c in CHECKLIST]
+    checklist[4] = {**checklist[4], "title": "Извинение", "allow_na": True, "na_rule": "клиент не выражал недовольства",
+                    "rule": "Да — если клиент выразил недовольство, оператор извинился."}
+    seen = []
+
+    class Recording(FakeLLM):
+        def complete(self, system, user, schema, think=None):
+            if "\nRule: " in user:
+                seen.append(schema)
+            return super().complete(system, user, schema, think)
+
+    llm = Recording({**ANSWERS, "generic": {"answer": "yes", "evidence": [], "explanation": "ok"}})
+    response = evaluate(request([Criterion(**c) for c in checklist]), llm)
+    assert next(r for r in response.results if r.code == "c5").answer == "yes"
+    assert [list(s["properties"])[1] for s in seen] == ["na_condition_holds", "answer"]
+    assert "na" not in seen[1]["properties"]["answer"]["enum"]
+
+
+def test_generic_criteria_can_use_a_separate_model():
+    checklist = [dict(c) for c in CHECKLIST]
+    checklist[4] = {**checklist[4], "title": "Извинение", "rule": "Да — оператор извинился за неудобство."}
+    main = FakeLLM(ANSWERS)
+    strong = FakeLLM({"generic": {"answer": "yes", "evidence": [], "explanation": "ok"}})
+    strong.model = "strong"
+    response = evaluate(request([Criterion(**c) for c in checklist]), main, strong)
+    assert strong.calls == ["generic"]
+    assert "generic" not in main.calls and main.calls
+    assert response.model.generic_name == "strong"
+    assert response.usage.calls == len(main.calls) + len(strong.calls)

@@ -16,6 +16,7 @@ class FakeLLM:
         self.answers = answers
         self.message = message
         self.calls: list[str] = []
+        self.thinks: list[bool | None] = []  # think override per call, aligned with calls
 
     def _probe_key(self, prompt: str) -> str:
         for probe in LEVEL_PROBES.values():
@@ -26,10 +27,13 @@ class FakeLLM:
                 return key
         raise AssertionError(f"unknown probe in prompt: {prompt[-200:]}")
 
-    def complete(self, system: str, user: str, schema: dict[str, Any]) -> LLMResponse:
+    def complete(self, system: str, user: str, schema: dict[str, Any], think: bool | None = None) -> LLMResponse:
+        self.thinks.append(think)
         if "\nRule: " in user:  # the generic evaluator
             self.calls.append("generic")
             content = {"why": "scripted generic", **self.answers["generic"]}
+            if "na_condition_holds" in schema["properties"]:  # the applicability step
+                content.setdefault("na_condition_holds", False)
             return LLMResponse(content=json.dumps(content, ensure_ascii=False), duration_ms=1)
         key = self._probe_key(user)
         self.calls.append(key)

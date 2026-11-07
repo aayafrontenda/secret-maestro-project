@@ -13,7 +13,6 @@ from difflib import SequenceMatcher
 
 from .checklist import BY_ID
 
-MIN_RULE_SIMILARITY = 0.75
 
 
 @dataclass(frozen=True)
@@ -59,10 +58,14 @@ NOISE = re.compile(r"[\W\d_]+", re.UNICODE)
 
 
 def _normalize(text: str) -> str:
-    text = text.casefold()
-    # Drop leading answer labels such as "Да —" / "Yes —" and anything that is not a letter.
+    """Remove only what does not change the meaning of a rule."""
+    text = text.casefold().replace("ё", "е")
+    # A sentence that only describes the negative answer ("Нет — ни одно из трёх не выявлено.").
+    text = re.sub(r"(^|[.;]\s*)(нет|no|жоқ)\s*[—–-][^.;]*[.;]?", " ", text)
+    # The leading answer label ("Да —", "Yes —", "Иә —").
     text = re.sub(r"^\s*(да|yes|иә)\s*[—–-]\s*", "", text)
-    text = re.sub(r"\bпо шкале\b.*$", "по шкале", text)
+    # "... по шкале на стр. 2" / "on the scale": the scale itself is checked separately.
+    text = re.sub(r"\b(по шкале|on the scale)\b.*$", "", text)
     return NOISE.sub(" ", text).strip()
 
 
@@ -79,8 +82,13 @@ def extra_guidelines(guidelines: list[str]) -> list[str]:
 def match_standard(
     rule: str, answer_type: str, is_flag: bool, scale_values: list[int] | None
 ) -> str | None:
-    """Return the preset ID ("01"…"08") that this criterion still is, or None."""
-    best: tuple[float, Standard | None] = (0.0, None)
+    """Return the preset ID ("01"…"08") that this criterion still is, or None.
+
+    Only the standard wording itself keeps the built-in logic. Character similarity cannot tell a
+    harmless variant from an edit that changes the meaning ("подтверждена" vs "не подтверждена"
+    is 0.98 similar), so any other wording goes to the generic evaluator and the edit takes effect.
+    """
+    wanted = _normalize(rule)
     for standard in STANDARDS:
         if standard.answer_type != answer_type or standard.is_flag != is_flag:
             continue
@@ -88,8 +96,6 @@ def match_standard(
             levels = set(BY_ID[standard.preset_id].levels)
             if not scale_values or set(scale_values) != levels:
                 continue
-        score = max(similarity(rule, text) for text in standard.rules)
-        if score > best[0]:
-            best = (score, standard)
-    score, standard = best
-    return standard.preset_id if standard and score >= MIN_RULE_SIMILARITY else None
+        if any(_normalize(text) == wanted for text in standard.rules):
+            return standard.preset_id
+    return None

@@ -15,13 +15,14 @@ import statistics
 import sys
 import time
 from collections import Counter, defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from maestro.contract import Criterion, EvaluateRequest, evaluate  # noqa: E402
-from maestro.llm import LLMOutputError, OllamaClient  # noqa: E402
+from maestro.llm import LLMOutputError, LLMUnavailable, OllamaClient, OpenAIClient  # noqa: E402
 
 
 def load_records(path: Path) -> list[dict]:
@@ -60,7 +61,15 @@ def main() -> int:
     parser.add_argument("--only", help="comma-separated conversation IDs")
     parser.add_argument("--language", help="RU, KZ or EN")
     parser.add_argument("--limit", type=int)
-    parser.add_argument("--model", help="Ollama model (default: MAESTRO_MODEL)")
+    parser.add_argument("--model", help="model name (default: MAESTRO_MODEL / MAESTRO_OPENAI_MODEL)")
+    parser.add_argument("--backend", choices=["ollama", "openai"], default="ollama")
+    parser.add_argument("--reasoning", help="OpenAI reasoning_effort, e.g. low or none")
+    parser.add_argument("--think-on", help="thinking only for these criteria/probes, e.g. 04,06,07 (sets MAESTRO_THINK_ON)")
+    parser.add_argument("--generic-model", help="separate model for criteria without built-in rules (OpenAI-compatible)")
+    parser.add_argument("--generic-url", help="API URL for --generic-model (default: MAESTRO_OPENAI_URL)")
+    parser.add_argument("--workers", type=int, default=1, help="dialogs scored in parallel (cloud backends)")
+    parser.add_argument("--price-in", type=float, help="USD per 1M prompt tokens, for the cost line")
+    parser.add_argument("--price-out", type=float, help="USD per 1M completion tokens, for the cost line")
     parser.add_argument("--out", type=Path, help="directory for responses.jsonl")
     parser.add_argument("--labels", type=Path, help="reference labels; only the labelled dialogs are run")
     args = parser.parse_args()
@@ -83,7 +92,17 @@ def main() -> int:
     if args.limit:
         records = records[: args.limit]
 
-    llm = OllamaClient.from_env(model=args.model)
+    if args.think_on is not None:
+        import os
+
+        os.environ["MAESTRO_THINK_ON"] = args.think_on
+    if args.backend == "openai":
+        llm = OpenAIClient.from_env(model=args.model, reasoning_effort=args.reasoning)
+    else:
+        llm = OllamaClient.from_env(model=args.model)
+    generic_llm = None
+    if args.generic_model:
+        generic_llm = OpenAIClient.from_env(model=args.generic_model, url=args.generic_url)
     status = llm.health()
     if not status["ok"]:
         print(f"error: {status['error']}", file=sys.stderr)
@@ -102,14 +121,27 @@ def main() -> int:
     started = time.perf_counter()
     codes = [c.code for c in criteria]
     print(f"{len(records)} dialogs, criteria: {', '.join(codes)}\n")
-    for n, record in enumerate(records, start=1):
+    tokens = {"prompt": 0, "completion": 0, "calls": 0}
+
+    def run_one(record: dict):
         request = to_request(record, criteria, guidelines)
         try:
-            response = evaluate(request, llm)
-        except LLMOutputError as exc:
-            failures.append(f"{request.conversation_id}: {exc}")
-            print(f"[{n}/{len(records)}] {request.conversation_id}: FAILED {exc}", flush=True)
+            return request, evaluate(request, llm, generic_llm), None
+        except (LLMOutputError, LLMUnavailable) as exc:
+            return request, None, exc
+
+    pool = ThreadPoolExecutor(max_workers=max(1, args.workers))
+    futures = [pool.submit(run_one, record) for record in records]
+    # Print each dialog as soon as it is scored, so a long run shows progress.
+    for n, future in enumerate(as_completed(futures), start=1):
+        request, response, error = future.result()
+        if error is not None:
+            failures.append(f"{request.conversation_id}: {error}")
+            print(f"[{n}/{len(records)}] {request.conversation_id}: FAILED {error}", flush=True)
             continue
+        tokens["prompt"] += response.usage.prompt_tokens
+        tokens["completion"] += response.usage.completion_tokens
+        tokens["calls"] += response.usage.calls
         seconds.append(response.duration_ms / 1000)
         for result in response.results:
             answers[result.code][str(result.answer)] += 1
@@ -129,6 +161,7 @@ def main() -> int:
         if out:
             out.write(response.model_dump_json() + "\n")
             out.flush()
+    pool.shutdown()
     if out:
         out.close()
 
@@ -137,6 +170,13 @@ def main() -> int:
     if seconds:
         print(f"seconds per dialog: mean {statistics.mean(seconds):.1f}, max {max(seconds):.1f}")
     print(f"methods: {dict(methods)}")
+    if seconds:
+        per = len(seconds)
+        print(f"tokens: prompt {tokens['prompt']}, completion {tokens['completion']}, calls {tokens['calls']} "
+              f"(per dialog: {tokens['prompt'] / per:.0f} in, {tokens['completion'] / per:.0f} out, {tokens['calls'] / per:.1f} calls)")
+        if args.price_in is not None and args.price_out is not None:
+            cost = tokens["prompt"] / 1e6 * args.price_in + tokens["completion"] / 1e6 * args.price_out
+            print(f"cost: ${cost:.4f} total, ${cost / per:.5f} per dialog")
     for code in codes:
         print(f"  {code}: {dict(sorted(answers[code].items()))}")
     for failure in failures:
@@ -165,6 +205,9 @@ class Comparison:
 
     def report(self, model: str) -> None:
         total = [ok for values in self.hits.values() for ok in values]
+        if not total:
+            print(f"\nno labelled dialogs were scored ({model})")
+            return
         print(f"\nagreement with reference labels ({model}): {sum(total)}/{len(total)} = {sum(total) / len(total):.1%}")
         for code, values in self.hits.items():
             print(f"  {code}: {sum(values)}/{len(values)}")

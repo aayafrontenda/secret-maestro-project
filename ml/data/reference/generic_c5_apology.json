@@ -1,0 +1,249 @@
+{
+ "about": "Criterion A (apology and acknowledgement) as c5. Labels from Gemini (Pro) by docs/GENERIC_LABELING_PROMPT.md, made after the generic evaluator change (true test). Not changed by review; borderline items marked 'uncertain' for a human.",
+ "labels": [
+  {
+   "conversation_id": "p1-ru-001",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-006",
+   "expected": {
+    "c5": "yes"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-009",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-016",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-018",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-022",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-025",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-029",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-002",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-003",
+   "expected": {
+    "c5": "yes"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-008",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-011",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-013",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-001",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-006",
+   "expected": {
+    "c5": "yes"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-009",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-014",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-015",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p4-ru-001",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-002",
+   "expected": {
+    "c5": "yes"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-005",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": [
+    "c5"
+   ]
+  },
+  {
+   "conversation_id": "p1-ru-010",
+   "expected": {
+    "c5": "yes"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-013",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-017",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-021",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-001",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-005",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": [
+    "c5"
+   ]
+  },
+  {
+   "conversation_id": "p1-kz-007",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-010",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-002",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-004",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-007",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-010",
+   "expected": {
+    "c5": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p4-ru-003",
+   "expected": {
+    "c5": "no"
+   },
+   "uncertain": [
+    "c5"
+   ]
+  }
+ ]
+}

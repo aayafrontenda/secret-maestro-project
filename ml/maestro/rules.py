@@ -10,16 +10,16 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .checklist import Answer
-from .probes import Context
+from .probes import Context, ProbeAnswer
 from .schemas import Role
 
 GREETING = re.compile(
     r"\b(здравствуй\w*|добр(ый|ое|ого) (день|вечер|утро|времени)|приветствую|сәлем\w*|салем\w*|армысыз|"
-    r"қайырлы (күн|таң|кеш)|hello|hi|good (morning|afternoon|evening))\b",
+    r"қайырлы (күн|таң|кеш)|кайырлы (кун|тан|кеш)|salem\w*|qayirli \w+|hello|hi|good (morning|afternoon|evening))\b",
     re.IGNORECASE,
 )
 INTRODUCTION = re.compile(
-    r"(меня зовут|менің атым|my name is|\[имя скрыто\]|\[name hidden\])",
+    r"(меня зовут|менің атым|менин атым|menin atym|my name is|\[имя скрыто\]|\[name hidden\])",
     re.IGNORECASE,
 )
 IDENTITY_VERIFIED = re.compile(
@@ -43,10 +43,47 @@ CLIENT_GONE = re.compile(
     r"customer ended the (call|chat))",
     re.IGNORECASE,
 )
+# The operator saying verification is needed, including conditional wording ("если нужно проверить счёт, понадобится
+# идентификация"): asking for it, rather than skipping it, is what the operator is judged on.
+VERIFICATION_ASKED = re.compile(
+    r"(подтверд\w* личност|идентификац|жеке бас\w* раста|verif\w* (your )?identity|confirm (your )?identity|"
+    r"identity (check|verification))",
+    re.IGNORECASE,
+)
 CONDITIONAL = re.compile(r"\b(если|егер|if)\b", re.IGNORECASE)
 QUESTION = re.compile(r"\w[^?]*\?")  # a client message with a question mark states a request
+# "Можно поговорить с человеком?" has a question mark but no request on substance.
+OPERATOR_REQUEST = re.compile(
+    r"(оператор|человек|специалист|сотрудник|маман|адам|\bagent\b|\bhuman\b|representative|\boperator\b)",
+    re.IGNORECASE,
+)
+# An operator asking for details: a question or a request to tell something.
+CLARIFYING = re.compile(
+    r"(\?|уточн\w*|укаж\w*|напиш\w*|подскаж\w*|сообщ\w*|назов\w*|пришл\w*|нақтыла\w*|айтыңыз|жазыңыз|"
+    r"көрсетіңіз|\bspecify\b|\btell me\b|\blet me know\b|\bplease (send|share|confirm)\b|"
+    # A question without a question mark: a question word at the start of a sentence, or a Kazakh question particle.
+    r"(^|[.!]\s+)(как(ой|ая|ое|ие|им)|где|когда|куда|откуда|сколько|почему|зачем|чем|вы\s|у вас\s|"
+    r"қай|қандай|қашан|қалай|қайда|неше|неге|which|what|where|when|how|why|do you|are you|can you)\b|"
+    r"\w+\s(ма|ме|ба|бе|па|пе)(\s|$|[.,!]))",
+    re.IGNORECASE,
+)
+# A closing offer of further help is a question but not a clarification. An opening "С чем помочь?" is one.
+HELP_OFFER = re.compile(
+    r"(чем ещ[её]|ещ[её] (какие[- ]то )?вопрос|ещ[её] (чем[- ]то )?помочь|басқа сұра\w*|тағы (қандай )?сұра\w*|"
+    r"тағы көмек|anything else|other questions)",
+    re.IGNORECASE,
+)
+# The operator asking for verification data or how to address the client: routine, not asking again for known details.
+ROUTINE_QUESTION = re.compile(
+    r"(фамили|отчеств|ф\.?\s?и\.?\s?о\b|\bиин\b|\bин\b|\bжсн\b|номер телефона|\bсмс\b|\bsms\b|шестизначн|"
+    r"код подтвержд|идентификац|подтверд\w* личност|жеке бас\w* раста|адрес\w* (вашей )?(постоянной )?регистрац|"
+    r"адрес\w* проживани|как (я )?(могу |можно )?(к вам )?обращаться|как\w* (мы )?к вам обращаться|как вас зовут|"
+    r"атыңыз кім|full name|date of birth|phone number|verification code|how (should|can) i address you)",
+    re.IGNORECASE,
+)
 GOODBYE = re.compile(
     r"(до свидания|всего (доброго|хорошего)|хорошего (дня|вечера)|сау болыңыз|сау бол\b|қош болыңыз|"
+    r"\bsau bol\w*|\bkosh bol\w*|"
     r"\bgoodbye\b|\bbye\b|have a (nice|good|great) (day|evening))",
     re.IGNORECASE,
 )
@@ -93,7 +130,10 @@ def c01(ctx: Context) -> Decision:
     _settle_by_phrase(ctx, "introduced", [first], INTRODUCTION)
     greeted, introduced = ctx.ask("greeted"), ctx.ask("introduced")
     client_lang, operator_lang = ctx.facts.client_language, ctx.facts.first_operator_language
-    if client_lang != "unknown" and client_lang == operator_lang:
+    # Kazakh typed without its own letters is detected as Russian, so a dialog marked as Kazakh with a
+    # "Russian" operator reply is not settled by code.
+    dialog_says_other = ctx.facts.dialog_language not in (None, operator_lang)
+    if client_lang != "unknown" and client_lang == operator_lang and not dialog_says_other:
         same_language = True
     else:
         # Detection can be wrong (Kazakh written without its own letters), so a mismatch is confirmed by the model.
@@ -104,12 +144,27 @@ def c01(ctx: Context) -> Decision:
 
 
 def c02(ctx: Context) -> Decision:
-    enough = ctx.ask("enough_info_from_start")
+    enough, known = ctx.ask("enough_info_from_start"), ctx.ask("used_known_details")
+    if not known.value and _is_routine(ctx, known.message_id):
+        # The "repeated" question was a verification or etiquette question, not a known detail asked again.
+        known = ProbeAnswer(True, known.message_id, "routine question, not a known detail asked again")
+    # Asking again for what the client already gave fails the criterion even if nothing was missing.
+    if not known.value:
+        facts = {"enough_info_from_start": enough.value, "used_known_details": False}
+        return Decision("no", facts, evidence=_cited(known), expected_at=known.message_id or _first_operator(ctx))
     if enough.value:
-        return Decision("na", {"enough_info_from_start": True}, "na_02", _cited(enough))
-    known, clarified = ctx.ask("used_known_details"), ctx.ask("clarified_missing")
-    facts = {"enough_info_from_start": False, "used_known_details": known.value, "clarified_missing": clarified.value}
-    answer = known.value and clarified.value
+        return Decision("na", {"enough_info_from_start": True, "used_known_details": True}, "na_02", _cited(enough))
+    clarified = ctx.ask("clarified_missing")
+    asked = clarified.value
+    if asked and "call" not in ctx.channel.lower():
+        # A clarification needs an operator question or request for details somewhere in the chat; a guess
+        # ("Переустановите приложение") is not one. Speech transcripts may lack question marks, so calls are trusted.
+        asked = any(
+            m.role is Role.OPERATOR and CLARIFYING.search(m.text) and not HELP_OFFER.search(m.text)
+            for m in ctx.transcript.messages
+        )
+    facts = {"enough_info_from_start": False, "used_known_details": True, "clarified_missing": asked}
+    answer = asked
     return Decision(
         _yes_no(answer), facts, evidence=_cited(known, clarified), expected_at=None if answer else _first_operator(ctx)
     )
@@ -132,16 +187,23 @@ def c03(ctx: Context) -> Decision:
         return Decision("na", {"identification_required": False}, "na_03")
     confirmed = ctx.ask("identity_confirmed_first")
     facts = {"identification_required": True, "identity_confirmed_first": confirmed.value}
-    return Decision(
-        _yes_no(confirmed.value),
-        facts,
-        evidence=_cited(confirmed, required),
-        expected_at=None if confirmed.value else (required.message_id or _first_operator(ctx)),
-    )
+    if confirmed.value:
+        return Decision("yes", facts, evidence=_cited(confirmed, required))
+    # Not confirmed. The operator still did the job if they asked for verification and revealed nothing
+    # about the account (the client declined or left); "no" is for skipping or doing it wrong.
+    asked = next((m for m in ctx.transcript.messages if m.role is Role.OPERATOR and VERIFICATION_ASKED.search(m.text)), None)
+    if asked is not None:
+        disclosed = ctx.ask("account_info_disclosed")
+        facts.update(verification_asked=True, account_info_disclosed=disclosed.value)
+        if not disclosed.value:
+            return Decision("yes", facts, evidence=[asked.id])
+        return Decision("no", facts, evidence=_cited(disclosed, required), expected_at=disclosed.message_id)
+    facts["verification_asked"] = False
+    return Decision("no", facts, evidence=_cited(required), expected_at=required.message_id or _first_operator(ctx))
 
 
 def c04(ctx: Context) -> Decision:
-    client_ids = [m.id for m in ctx.shown("client")]
+    client_ids = [m.id for m in ctx.shown("client") if not OPERATOR_REQUEST.search(m.text)]
     _settle_by_phrase(ctx, "request_formulated", client_ids, QUESTION)
     formulated = ctx.ask("request_formulated")
     if not formulated.value:
@@ -175,17 +237,41 @@ def _next_operator(ctx: Context, message_id: str) -> str | None:
     return next((m.id for m in messages[start + 1 :] if m.role is Role.OPERATOR), None)
 
 
+def _is_routine(ctx: Context, message_id: str | None) -> bool:
+    message = ctx.message(message_id)
+    return message is not None and message.role is Role.OPERATOR and bool(ROUTINE_QUESTION.search(message.text))
+
+
+def _previous_operator(ctx: Context, message_id: str) -> str | None:
+    messages = ctx.transcript.messages
+    end = next((i for i, m in enumerate(messages) if m.id == message_id), 0)
+    return next((m.id for m in reversed(messages[:end]) if m.role is Role.OPERATOR), None)
+
+
 def c06(ctx: Context) -> Decision:
-    """Walk the scale from the bottom: each step has its own question, asked only if needed."""
+    # Scale from the checklist: 0 incoherent, 4 the client has to ask again, 7 one noticeable lapse, 10 clear.
+    # Rudeness is scored in 05 and 08, not here.
     incoherent = ctx.ask("incoherent")
-    if incoherent.value:
-        return Decision(0, {"incoherent": True}, evidence=_cited(incoherent))
+    if incoherent.value and incoherent.message_id:
+        return Decision(0, {"incoherent": True}, evidence=_cited(incoherent), expected_at=incoherent.message_id)
     asked_again = ctx.ask("client_asked_again")
+    if asked_again.value and asked_again.message_id:
+        # A broad question over the whole chat over-counts follow-ups; confirm on the message pair.
+        prev = _previous_operator(ctx, asked_again.message_id)
+        if prev is not None:
+            confirmed = ctx.ask("asked_again_confirmed", msg=asked_again.message_id, prev=prev)
+            if not confirmed.value:
+                asked_again = ProbeAnswer(False, None, "not confirmed on the message pair")
     if asked_again.value:
-        return Decision(4, {"incoherent": False, "client_asked_again": True}, evidence=_cited(asked_again))
+        facts = {"incoherent": False, "client_asked_again": True}
+        return Decision(4, facts, evidence=_cited(asked_again), expected_at=asked_again.message_id)
     lapse = ctx.ask("noticeable_lapse")
+    if lapse.value and _is_routine(ctx, lapse.message_id):
+        lapse = ProbeAnswer(False, None, "routine question, not a lapse")
     facts = {"incoherent": False, "client_asked_again": False, "noticeable_lapse": lapse.value}
-    return Decision(7 if lapse.value else 10, facts, evidence=_cited(lapse))
+    if lapse.value:
+        return Decision(7, facts, evidence=_cited(lapse), expected_at=lapse.message_id)
+    return Decision(10, facts, evidence=[ctx.facts.first_operator_id] if ctx.facts.first_operator_id else [])
 
 
 def c07(ctx: Context) -> Decision:

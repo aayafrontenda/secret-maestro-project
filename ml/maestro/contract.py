@@ -77,6 +77,7 @@ class CriterionResult(BaseModel):
 class ModelInfo(BaseModel):
     provider: str = "ollama"
     name: str
+    generic_name: str | None = Field(default=None, description="Model used for criteria without built-in rules, if different")
 
 
 class Usage(BaseModel):
@@ -160,7 +161,9 @@ def _standard_result(ctx: Context, criterion: Criterion, preset_id: str, languag
     )
 
 
-def _generic_result(ctx: Context, criterion: Criterion, language: str, guidelines: list[str]) -> CriterionResult:
+def _generic_result(
+    ctx: Context, criterion: Criterion, language: str, guidelines: list[str], others: list[str] | None = None
+) -> CriterionResult:
     labels = {int(s["value"]): str(s.get("label", "")) for s in criterion.scale_steps or [] if "value" in s}
     spec = GenericCriterion(
         key=criterion.code,
@@ -171,6 +174,7 @@ def _generic_result(ctx: Context, criterion: Criterion, language: str, guideline
         na_rule=criterion.na_rule,
         is_flag=criterion.is_flag,
         scale=[(v, labels.get(v, "")) for v in _scale_values(criterion)],
+        others=others or [],
     )
     result = evaluate_generic(ctx, spec, language, guidelines)
     answer = _fit_answer(result.answer, criterion)
@@ -190,8 +194,12 @@ def _generic_result(ctx: Context, criterion: Criterion, language: str, guideline
     )
 
 
-def evaluate(request: EvaluateRequest, llm: LLMClient) -> EvaluateResponse:
-    """Answer every criterion of the request. Raises LLMUnavailable or LLMOutputError on failure."""
+def evaluate(request: EvaluateRequest, llm: LLMClient, generic_llm: LLMClient | None = None) -> EvaluateResponse:
+    """Answer every criterion of the request. Raises LLMUnavailable or LLMOutputError on failure.
+
+    `generic_llm`, if given, scores the criteria without built-in rules (usually a stronger model);
+    the built-in criteria keep using `llm`.
+    """
     started = time.perf_counter()
     language = LANGUAGES.get(request.language.strip().upper(), "ru")
     transcript = to_transcript(request)
@@ -203,6 +211,11 @@ def evaluate(request: EvaluateRequest, llm: LLMClient) -> EvaluateResponse:
         channel=request.channel,
         guidelines=extra_guidelines(guidelines),
     )
+    # Same chat and the same trace list (so usage counts both models), another model.
+    gctx = ctx if generic_llm is None else Context(
+        transcript=transcript, facts=ctx.facts, llm=generic_llm, channel=request.channel,
+        guidelines=ctx.guidelines, traces=ctx.traces,
+    )
 
     results = []
     for criterion in request.criteria:
@@ -210,13 +223,14 @@ def evaluate(request: EvaluateRequest, llm: LLMClient) -> EvaluateResponse:
         if preset_id is not None:
             results.append(_standard_result(ctx, criterion, preset_id, language))
         else:
-            results.append(_generic_result(ctx, criterion, language, guidelines))
+            others = [c.title for c in request.criteria if c.code != criterion.code and c.title]
+            results.append(_generic_result(gctx, criterion, language, guidelines, others))
 
     traces = [t for attempts in ctx.traces.values() for t in attempts]
     return EvaluateResponse(
         conversation_id=request.conversation_id,
         results=results,
-        model=ModelInfo(name=llm.model),
+        model=ModelInfo(name=llm.model, generic_name=generic_llm.model if generic_llm is not None else None),
         usage=Usage(
             prompt_tokens=sum(t.prompt_tokens or 0 for t in traces),
             completion_tokens=sum(t.completion_tokens or 0 for t in traces),

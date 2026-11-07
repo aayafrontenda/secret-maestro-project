@@ -1,0 +1,243 @@
+{
+ "about": "Criterion B (clarity of instructions) as c6. Labels from Gemini (Pro) by docs/GENERIC_LABELING_PROMPT.md, made after the generic evaluator change (true test). Not changed by review; borderline items marked 'uncertain' for a human.",
+ "labels": [
+  {
+   "conversation_id": "p1-ru-001",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-006",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-009",
+   "expected": {
+    "c6": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-016",
+   "expected": {
+    "c6": 5
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-018",
+   "expected": {
+    "c6": 0
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-022",
+   "expected": {
+    "c6": 0
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-025",
+   "expected": {
+    "c6": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-029",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-002",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-003",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-008",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-011",
+   "expected": {
+    "c6": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-013",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-001",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-006",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-009",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-014",
+   "expected": {
+    "c6": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-015",
+   "expected": {
+    "c6": 5
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p4-ru-001",
+   "expected": {
+    "c6": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-002",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-005",
+   "expected": {
+    "c6": 5
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-010",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-013",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-017",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-021",
+   "expected": {
+    "c6": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-001",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-005",
+   "expected": {
+    "c6": 5
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-007",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-010",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-002",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-004",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-007",
+   "expected": {
+    "c6": 10
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-010",
+   "expected": {
+    "c6": "na"
+   },
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p4-ru-003",
+   "expected": {
+    "c6": "na"
+   },
+   "uncertain": []
+  }
+ ]
+}

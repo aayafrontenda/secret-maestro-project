@@ -13,6 +13,7 @@ Ideas behind the design:
 from __future__ import annotations
 
 import hashlib
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -21,9 +22,7 @@ from .facts import ChatFacts, render_facts
 from .llm import LLMClient, LLMOutputError, extract_json
 from .schemas import AttemptTrace, Message, Role, Transcript
 
-Scope = Literal[
-    "first_operator", "last_operator", "opening", "operator", "operator_tail", "client", "people", "all"
-]
+Scope = Literal["first_operator", "opening", "operator", "operator_tail", "operator_closing", "since_operator", "client", "people", "all"]
 Cite = Literal["any", "operator", "client"]
 
 SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text(encoding="utf-8")
@@ -38,10 +37,11 @@ CALL_NOTE = (
 
 SCOPE_INTRO: dict[Scope, str] = {
     "first_operator": "The operator's FIRST message in the chat",
-    "last_operator": "The operator's LAST message in the chat",
     "opening": "The start of the chat, up to and including the operator's first message",
     "operator": "All messages written by the OPERATOR",
     "operator_tail": "The operator's LAST messages in the chat",
+    "operator_closing": "The operator's closing messages, written after the client's last message",
+    "since_operator": "The chat from the operator's first message to the end (the earlier exchange with the bot is left out)",
     "client": "All messages written by the CLIENT",
     # The bot's boilerplate ("I can share information about your accounts", privacy consent)
     # misleads questions about account data, so those questions do not see bot messages.
@@ -88,10 +88,9 @@ PROBES: dict[str, Probe] = {
             hints=True,
         ),
         # 02 Needs discovery
-        # 02 sees no bot messages: the bot's own clarifying questions were credited to the operator.
         Probe(
             "enough_info_from_start",
-            "people",
+            "all",
             "Did the client's messages BEFORE the operator's first answer already contain everything needed "
             "to answer, so that no clarifying question was necessary? A general question with one clear answer, "
             "such as a tariff or how to open an account, counts as yes. A greeting without a request, or a request "
@@ -100,14 +99,16 @@ PROBES: dict[str, Probe] = {
         ),
         Probe(
             "used_known_details",
-            "people",
+            "all",
             "Did the operator take into account the details the client had already given, without asking for them again? "
-            "If the client had not given any details, answer true.",
+            "If the client had not given any details, answer true. Asking for identification data to verify the client "
+            "(full name, ИИН, address, phone number, SMS code) is a verification step, NOT asking again for known "
+            "details; nor is asking again because the line was bad or the speech was not recognised.",
             cite="operator",
         ),
         Probe(
             "clarified_missing",
-            "people",
+            "all",
             "Before giving the answer, did the operator ask the client for the details that were missing? "
             "If the client gave no request at first, asking how they can help counts.",
             cite="operator",
@@ -132,20 +133,31 @@ PROBES: dict[str, Probe] = {
             "performed an account action? A system message reporting successful verification, or the operator checking "
             "details and confirming they match, counts. Only asking the client to verify, without confirmation, does NOT count.",
         ),
+        Probe(
+            "account_info_disclosed",
+            "people",
+            "Did the operator reveal anything about the client's OWN account (balance, restrictions, order, payment or "
+            "position status, holdings) or perform an action on it? Saying that verification is needed, explaining in "
+            "general terms, or guessing without looking at the account does NOT count.",
+            cite="operator",
+        ),
         # 04 Consultation
         Probe(
             "request_formulated",
             "client",
             "Did the client ask any question, make any request or describe any problem? Every kind counts: "
             "'What is the commission?', 'How do I open an account?', 'Show my balance', 'I cannot log in'. "
-            "A greeting alone, or 'thank you', does not count.",
+            "A greeting alone, or 'thank you', does not count. Asking only to talk to an operator, a human or a "
+            "specialist ('можно поговорить с человеком?', 'подключите оператора', 'connect me to an agent') is NOT a "
+            "request on substance.",
         ),
         # 05 Empathy
         Probe(
             "impolite",
             "operator",
-            "Is any of these operator messages rude, sarcastic, dismissive or blaming the client? "
-            "If yes, point to that message.",
+            "Is any of these operator messages rude, sarcastic, blaming the client, or brushing off the client's "
+            "problem? Short, plain or informal wording such as 'Ну, тогда сайт.' is NOT rude by itself, and a wrong "
+            "or guessed answer is NOT rude. If yes, point to that message.",
             cite="operator",
         ),
         Probe(
@@ -157,38 +169,57 @@ PROBES: dict[str, Probe] = {
         Probe(
             "reacted_to_problem",
             "all",
-            "The client complained in message {complaint}. Did the operator respond to that specific problem? Any one "
-            "of these counts: acknowledging the client's concern ('I understand why you are worried', 'Понимаю, что "
-            "вы переживаете'), apologising, or giving an explanation or steps aimed at that specific problem. "
-            "Answer false only if the operator ignored the problem, brushed it off, or replied with nothing but a "
-            "generic phrase such as 'thank you for contacting us'.",
+            "The client complained, for example in message {complaint}. Did the operator respond to EACH complaint "
+            "or concern the client raised in the chat? For each one, any of these counts: acknowledging the client's "
+            "concern ('I understand why you are worried', 'Понимаю, что вы переживаете'), apologising, or giving an "
+            "explanation or steps aimed at that specific problem. Answer false if the operator ignored or brushed off "
+            "ANY of the client's complaints, or replied with nothing but a generic phrase such "
+            "as 'thank you for contacting us'. An unanswered question that is not a complaint is about the "
+            "completeness of the answer, not about empathy: do NOT count it here.",
             cite="operator",
         ),
-        # 06 Dialogue management: one question per step of the scale, code picks the step
+        # 06 Dialogue management: facts; the level is set by code (rules.c06)
         Probe(
             "incoherent",
-            "people",
-            "Are the operator's replies so incoherent or contradictory that the course of the dialogue cannot be "
-            "followed? Answer true only for severe cases: replies that contradict each other or make no sense. "
-            "A wrong or unhelpful answer that is clearly worded is NOT incoherent.",
+            "operator",
+            "Are the operator's messages incoherent or contradicting each other, so that the course of the dialogue "
+            "cannot be followed? Rudeness, a short reply or a wrong answer is NOT incoherence.",
             cite="operator",
         ),
         Probe(
             "client_asked_again",
-            "people",
-            "Did the client have to ask again, repeat what they had said, or correct the operator because an "
-            "operator reply was unclear, wrong, irrelevant, out of order or ignored their question? Examples: "
-            "'Какое приложение? Я на компьютере', 'Я спрашиваю, почему вывод ограничен', 'Settings where?', "
-            "'Жоғарыда жаздым ғой'. A new, different question from the client does NOT count.",
+            "since_operator",
+            "Did the client have to ask again ABOUT THE SAME THING the operator had just replied to, because they could "
+            "not understand that reply or could not tell from it what to do? Example: the operator replies 'Вы вообще "
+            "читать умеете? Бот всё написал.' and the client asks 'Не понимаю, на какой сайт перейти'. A new question "
+            "on another topic ('Ещё вопрос: …', 'Тағы бір сұрақ'), a follow-up that builds on a reply the client "
+            "understood ('А что значит…?', 'А почему тогда…?', 'А можно ещё…?'), or a detail the client adds does NOT "
+            "count. In a phone call, asking to repeat because of a bad line, noise or speech recognition ('Алло', "
+            "'Что говорите?', 'Повторите') does NOT count either. It also does NOT count when the client understood the reply "
+            "but disagrees with it or objects to it, when the reply was simply wrong or off-topic, when the client "
+            "gives new details or answers the operator's question, or repeats something only because the operator "
+            "asked for it again.",
+            cite="client",
+        ),
+        Probe(
+            "asked_again_confirmed",
+            "since_operator",
+            "Look only at operator message {prev} and the client's message {msg} after it. Is message {msg} the client "
+            "asking AGAIN about the same thing, because they could not understand {prev} or could not tell from it what "
+            "to do? Answer false if {msg} is a follow-up that goes further, a new question, a reaction, new details, or "
+            "a request to repeat because of a bad line or noise.",
             cite="client",
         ),
         Probe(
             "noticeable_lapse",
-            "people",
-            "Was there one noticeable lapse in how the operator communicated that still let the client understand "
-            "and continue? Examples: a long pause in the middle of the dialogue without warning the client (see the "
-            "pauses in the facts), a rude or careless phrase, sloppy wording, or replies in a confusing order. "
-            "The wait before the operator's first reply does NOT count.",
+            "since_operator",
+            "Was there one noticeable lapse in how the operator communicated that the client could still follow? "
+            "Examples: asking again for something the client had already said, an explicit wait (leaving to check "
+            "something, or a long pause listed in the facts) without warning the client, replies given in a confusing "
+            "order, many spelling mistakes. A wait the operator announced ('ожидайте на линии', 'минуту', 'сейчас проверю'), "
+            "asking how to address the client, or verification questions are NOT lapses. Rudeness, gross violations (such as offering a private service outside "
+            "the company), the speed of the first reply and whether the answer was correct or complete do NOT count.",
+            cite="operator",
             hints=True,
         ),
         # 07 Closing
@@ -196,16 +227,18 @@ PROBES: dict[str, Probe] = {
             "chat_cut_off",
             "all",
             "Did the chat break off before the operator had a chance to close it, for example the client stopped "
-            "replying mid-dialogue and the chat was closed, or the connection dropped? If the operator answered and "
-            "simply did not say goodbye, answer false.",
+            "replying mid-dialogue and the chat was closed, or the connection dropped? In a phone call, the client "
+            "hanging up (a system message such as 'Клиент завершил разговор') before the operator's closing phrase "
+            "counts as breaking off, even right after the client said thank you. If the operator had time to close and "
+            "simply did not say goodbye, or the call ended after the operator's goodbye, answer false.",
         ),
         Probe(
             "summarized",
-            "last_operator",
-            "Does this closing message sum up the outcome or the next step of the conversation? Examples: "
-            "'Your payment is being processed, we will reply in this chat', 'Я передал вопрос специалистам', "
-            "'Аударымға қатысты жауапты осында жібереміз', 'We'll follow up here about the transfer'. 'You're welcome', 'Пожалуйста', thanks and good wishes "
-            "alone are NOT a summary.",
+            "operator_closing",
+            "In these closing messages, does the operator sum up the outcome or state the agreed next step? "
+            "Examples: 'Итак, мы…', 'Я передал вопрос специалистам, ответ придёт в этот чат', "
+            "'Жауапты осында жібереміз', 'We'll follow up here about the transfer'. A thank-you, 'you're welcome' "
+            "or a good wish alone is NOT a summary.",
         ),
         Probe(
             "offered_help",
@@ -261,6 +294,37 @@ LEVEL_PROBES: dict[str, LevelProbe] = {
 }
 
 
+PROBE_CRITERION: dict[str, str] = {
+    "greeted": "01", "introduced": "01", "client_language_used": "01",
+    "enough_info_from_start": "02", "used_known_details": "02", "clarified_missing": "02",
+    "identification_required": "03", "identity_confirmed_first": "03", "account_info_disclosed": "03",
+    "request_formulated": "04", "consultation_level": "04",
+    "impolite": "05", "client_complained": "05", "reacted_to_problem": "05",
+    "dialogue_level": "06", "incoherent": "06", "client_asked_again": "06", "asked_again_confirmed": "06", "noticeable_lapse": "06",
+    "chat_cut_off": "07", "summarized": "07", "offered_help": "07", "said_goodbye": "07",
+    "insult": "08", "off_company_offer": "08", "confidential_disclosure": "08",
+}
+
+
+def think_for(key: str) -> bool | None:
+    """Thinking mode for one probe, from MAESTRO_THINK_ON.
+
+    Unset: None, the client's own setting applies. Otherwise a comma-separated list of criterion
+    codes (04, 06), probe keys (summarized), 'generic' for the generic evaluator, or 'all';
+    listed probes think, every other probe does not.
+    """
+    raw = os.getenv("MAESTRO_THINK_ON")
+    if raw is None or not raw.strip():
+        return None
+    wanted = {item.strip().lower() for item in raw.split(",") if item.strip()}
+    wanted |= {f"0{item}" for item in wanted if item.isdigit() and len(item) == 1}  # "4" means "04"
+    if "all" in wanted:
+        return True
+    if key.startswith("generic:"):
+        return "generic" in wanted
+    return key in wanted or PROBE_CRITERION.get(key, "") in wanted
+
+
 @dataclass(frozen=True)
 class ProbeAnswer:
     value: bool | int
@@ -288,8 +352,6 @@ class Context:
         operator = [m for m in messages if m.role is Role.OPERATOR]
         if scope == "first_operator":
             return operator[:1]
-        if scope == "last_operator":
-            return operator[-1:]
         if scope == "opening":
             if not operator:
                 return []
@@ -298,6 +360,13 @@ class Context:
             return operator
         if scope == "operator_tail":
             return operator[-OPERATOR_TAIL:]
+        if scope == "since_operator":
+            return messages[messages.index(operator[0]) :] if operator else []
+        if scope == "operator_closing":
+            # After the client's last message, so the answer itself is not mistaken for a summary.
+            last_client = max((i for i, m in enumerate(messages) if m.role is Role.CLIENT), default=-1)
+            closing = [m for m in messages[last_client + 1 :] if m.role is Role.OPERATOR]
+            return closing or operator[-1:]
         if scope == "client":
             return [m for m in messages if m.role is Role.CLIENT]
         if scope == "people":
@@ -384,10 +453,12 @@ class Context:
         traces = self.traces.setdefault(key, [])
         required = [name for name in schema.get("required", []) if name != "message"]
         last_error = ""
+        think = think_for(key)
+        options = {} if think is None else {"think": think}
         for _ in range(MAX_ATTEMPTS):
             digest = hashlib.sha256((system + prompt).encode()).hexdigest()
             try:
-                response = self.llm.complete(system, prompt, schema)
+                response = self.llm.complete(system, prompt, schema, **options)
             except LLMOutputError as exc:
                 last_error = str(exc)
                 traces.append(AttemptTrace(probe=key, prompt_sha256=digest, raw_response="", duration_ms=0, error=last_error))
