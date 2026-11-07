@@ -167,12 +167,22 @@ def _c06(answers):
 
 
 def test_dialogue_level_is_set_by_code_from_facts():
+    lapse = {"noticeable_lapse": ("M2", True), "lapse_confirmed": ("M2", True)}
     assert _c06({}) == 10
-    assert _c06({"noticeable_lapse": ("M2", True)}) == 7
-    assert _c06({"client_asked_again": ("M3", True), "asked_again_confirmed": ("M3", True), "noticeable_lapse": ("M2", True)}) == 4
+    assert _c06(lapse) == 7
+    # The broad question said "lapse" but the message alone shows none.
+    assert _c06({"noticeable_lapse": ("M2", True), "lapse_confirmed": False}) == 10
+    assert _c06({"client_asked_again": ("M3", True), "asked_again_confirmed": ("M3", True), **lapse}) == 4
     # Not confirmed on the message pair: a follow-up, not a re-ask; the lapse decides.
-    assert _c06({"client_asked_again": ("M3", True), "asked_again_confirmed": False, "noticeable_lapse": ("M2", True)}) == 7
+    assert _c06({"client_asked_again": ("M3", True), "asked_again_confirmed": False, **lapse}) == 7
     assert _c06({"incoherent": ("M2", True), "client_asked_again": ("M3", True)}) == 0
+
+
+def test_a_rude_but_clear_reply_is_not_incoherence():
+    # "Тогда не знаю." was flagged as incoherent; the narrow check finds its meaning clear.
+    answers = {"incoherent": ("M2", True), "reply_understandable": ("M2", True)}
+    assert _c06(answers) == 10
+    assert _c06({**answers, "client_asked_again": ("M3", True), "asked_again_confirmed": ("M3", True)}) == 4
 
 
 def test_incoherence_needs_an_operator_message_to_point_at():

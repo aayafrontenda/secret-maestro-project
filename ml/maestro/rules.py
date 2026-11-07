@@ -253,6 +253,11 @@ def c06(ctx: Context) -> Decision:
     # Rudeness is scored in 05 and 08, not here.
     incoherent = ctx.ask("incoherent")
     if incoherent.value and incoherent.message_id:
+        # Level 0 means the course of the dialogue cannot be followed; confirm on the cited reply alone.
+        clear = ctx.ask("reply_understandable", msg=incoherent.message_id)
+        if clear.value:
+            incoherent = ProbeAnswer(False, None, "the cited reply is understandable")
+    if incoherent.value and incoherent.message_id:
         return Decision(0, {"incoherent": True}, evidence=_cited(incoherent), expected_at=incoherent.message_id)
     asked_again = ctx.ask("client_asked_again")
     if asked_again.value and asked_again.message_id:
@@ -268,6 +273,11 @@ def c06(ctx: Context) -> Decision:
     lapse = ctx.ask("noticeable_lapse")
     if lapse.value and _is_routine(ctx, lapse.message_id):
         lapse = ProbeAnswer(False, None, "routine question, not a lapse")
+    if lapse.value and lapse.message_id:
+        # The broad question contradicted its own reasoning or counted other criteria; confirm on the message.
+        confirmed = ctx.ask("lapse_confirmed", msg=lapse.message_id)
+        if not confirmed.value:
+            lapse = ProbeAnswer(False, None, "not confirmed on the message")
     facts = {"incoherent": False, "client_asked_again": False, "noticeable_lapse": lapse.value}
     if lapse.value:
         return Decision(7, facts, evidence=_cited(lapse), expected_at=lapse.message_id)

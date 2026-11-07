@@ -187,6 +187,31 @@ PROBES: dict[str, Probe] = {
             cite="operator",
         ),
         Probe(
+            # Asked only when "noticeable_lapse" fired: the broad question answered true while its own reasoning
+            # said there was no lapse, or counted an offer outside the company (a 08 violation) as one.
+            "lapse_confirmed",
+            "since_operator",
+            "Check operator message {msg} alone. Is it a lapse in HOW the operator communicates: a wait in the middle "
+            "of the dialogue the client was not warned about (see the pauses in the facts), a reply given in a "
+            "confusing order, asking again for something the client had already said, or many spelling mistakes? "
+            "Answer false if the message is clear and in order, even if its content is wrong, rude, an offer outside "
+            "the company or another rule violation: those are judged by other criteria. Verification questions and an "
+            "announced wait are not lapses either.",
+            cite="operator",
+            hints=True,
+        ),
+        Probe(
+            # Asked only when "incoherent" fired: the broad question flagged rude, unhelpful or rule-breaking
+            # replies whose meaning was perfectly clear ("Тогда не знаю.", "Вы вообще читать умеете?").
+            "reply_understandable",
+            "since_operator",
+            "Read operator message {msg} as a reply to the messages before it. Is it clear what the operator means "
+            "by it? Answer true even if the reply is rude, unhelpful, wrong, a refusal, breaks company rules or ends "
+            "the conversation abruptly: those are judged elsewhere. Answer false only if the message makes no sense "
+            "or contradicts what the operator said before, so the client cannot tell what the operator means.",
+            cite="operator",
+        ),
+        Probe(
             "client_asked_again",
             "since_operator",
             "Did the client have to ask again ABOUT THE SAME THING the operator had just replied to, because they could "
@@ -300,7 +325,7 @@ PROBE_CRITERION: dict[str, str] = {
     "identification_required": "03", "identity_confirmed_first": "03", "account_info_disclosed": "03",
     "request_formulated": "04", "consultation_level": "04",
     "impolite": "05", "client_complained": "05", "reacted_to_problem": "05",
-    "dialogue_level": "06", "incoherent": "06", "client_asked_again": "06", "asked_again_confirmed": "06", "noticeable_lapse": "06",
+    "dialogue_level": "06", "incoherent": "06", "reply_understandable": "06", "client_asked_again": "06", "asked_again_confirmed": "06", "noticeable_lapse": "06", "lapse_confirmed": "06",
     "chat_cut_off": "07", "summarized": "07", "offered_help": "07", "said_goodbye": "07",
     "insult": "08", "off_company_offer": "08", "confidential_disclosure": "08",
 }
