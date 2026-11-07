@@ -353,13 +353,15 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
         h('span', { class: 'cqa-overall-label' }, 'Итоговая оценка',
           orig.total !== fin.total && h('span', { class: 'cqa-was' }, 'исходно ', h('s', { class: 'cqa-num' }, fmt(orig.total)))),
         h('span', { class: 'cqa-total' }, fin.total == null ? '—' : fmt(fin.total, cl.rules?.rounding ?? 2))),
+      fin.total != null && h('p', { class: 'cqa-muted cqa-num' },
+        `Набрано ${fmt(fin.earned, 1)} из ${fmt(fin.possible, 1)} возможных → ${fmt(fin.total)} из 100`),
 
       fin.total != null && h('div', { class: 'cqa-bar', role: 'img', 'aria-label': 'Вклад критериев в итог' },
         app.map(c => {
           const r = fin.rows[c.id];
           return h('button', {
             class: 'cqa-seg', 'data-crit': c.id, style: { flex: `${r.effWeight} 1 0` },
-            title: `${c.code} ${c.name}: ${fmt(r.points)} из ${fmt(r.effWeight)}`,
+            title: `${c.code} ${c.name}: ${fmt(r.raw)} из ${fmt(c.weight)}`,
             onmouseenter: () => { S.hover = c.id; applyHighlights(); },
             onmouseleave: () => { S.hover = null; applyHighlights(); },
             onclick: () => { S.filter = null; setPinned(c.id); },
@@ -391,12 +393,12 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
             onclick: () => { S.filter = S.filter === sec.id ? null : sec.id; rerender(); },
           },
             h('span', { class: 'cqa-secs-name' }, sec.name),
-            h('span', { class: 'cqa-secs-val cqa-num' }, sc ? (sc.max > 0 ? `${fmt(sc.points, 1)} / ${fmt(sc.max, 1)}` : 'N/A') : grossHere ? 'выявлены' : 'нет'),
+            h('span', { class: 'cqa-secs-val cqa-num' }, sc ? (sc.rawMax > 0 ? `${fmt(sc.rawPoints, 1)} / ${fmt(sc.rawMax, 1)}` : 'N/A') : grossHere ? 'выявлены' : 'нет'),
             h('span', { class: 'cqa-secs-bar' }, h('i', { style: { width: `${pct ?? (grossHere ? 100 : 0)}%` } })));
         })),
 
       fin.naIds.length > 0 && h('p', { class: 'cqa-muted' },
-        `N/A: ${fin.naIds.map(x => critById(x).code).join(', ')}. Их вес (${fin.naIds.reduce((a, x) => a + critById(x).weight, 0)}) перераспределён между остальными.`),
+        `N/A: ${fin.naIds.map(x => critById(x).code).join(', ')}. Их вес (${fin.naIds.reduce((a, x) => a + critById(x).weight, 0)}) исключён из возможных баллов.`),
 
       S.role === 'reviewer' && openAppeals.length > 0 && h('div', { class: 'cqa-queue' },
         h('b', null, icon('gavel', 14), `На рассмотрении: ${openAppeals.length}`),
@@ -503,13 +505,13 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
         h('span', { class: 'cqa-crit-name' }, c.name),
         appeal && h('span', { class: `cqa-appeal-mark cqa-appeal-mark--${appeal.status}`, title: 'Есть апелляция' }, icon('gavel', 12)),
         answerBadge(c, final, was),
-        c.type !== 'flag' && h('span', { class: 'cqa-crit-pts cqa-num' }, row?.na ? '—' : fmt(row?.points, 1))));
+        c.type !== 'flag' && h('span', { class: 'cqa-crit-pts cqa-num' }, row?.na ? '—' : `${fmt(row?.raw, 1)} / ${fmt(c.weight, 0)}`)));
     }
 
     let formula = null;
     if (c.type !== 'flag' && row && !row.na) {
       const part = c.type === 'scale' ? `${final}/${scaleMax(c)}` : final === 'yes' ? '1' : '0';
-      formula = `${part} × ${fmt(row.effWeight)}${Math.abs(row.effWeight - c.weight) > 0.001 ? ` · вес ${c.weight} → ${fmt(row.effWeight)} после N/A` : ''}`;
+      formula = `${part} × ${c.weight} = ${fmt(row.raw)}`;
     }
     const typeText = c.type === 'flag' ? TYPE_LABEL.flag : `${TYPE_LABEL[c.type]}${c.na_allowed ? ' / N/A' : ''} · вес ${c.weight}`;
 
@@ -521,8 +523,8 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
         h('div', { class: 'cqa-crit-score' },
           answerBadge(c, final, was),
           c.type !== 'flag' && h('div', { class: 'cqa-pts' },
-            h('b', { class: 'cqa-num' }, row?.na ? '—' : fmt(row?.points)),
-            h('span', { class: 'cqa-num' }, row?.na ? 'исключён' : `из ${fmt(row?.effWeight)}`)))),
+            h('b', { class: 'cqa-num' }, row?.na ? '—' : fmt(row?.raw)),
+            h('span', { class: 'cqa-num' }, row?.na ? 'исключён' : `из ${fmt(c.weight)}`)))),
       r && [
         h('p', { class: 'cqa-expl' }, final === 'na' || r.answer === 'na' ? [h('em', null, 'Причина N/A: '), r.na_reason || r.explanation] : r.explanation),
         h('div', { class: 'cqa-evs' }, evidenceChips(r)),

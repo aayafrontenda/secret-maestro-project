@@ -1,7 +1,7 @@
 // Расчёт итога по правилам чек-листа (стр. 2 PDF). Чистая функция — бэкенд должен считать так же.
 //   1. N/A только где разрешён.
 //   2. «Да» = полный вес, «Нет» = 0, шкала = ступень / верхняя ступень × вес.
-//   3. Веса N/A пропорционально перераспределяются между применимыми критериями (максимум 100).
+//   3. N/A исключается: итог = набрано / возможно × 100 по применимым критериям (максимум 100).
 //   4. Итог округляется до rules.rounding знаков. Нет применимых — итог не считается.
 //   5. Критерии type=flag (грубые ошибки) баллов не дают, отмечаются отдельно.
 
@@ -28,15 +28,17 @@ export function computeScore(checklist, answers) {
   const applicable = scored.filter(c => answers[c.id] !== 'na' && answers[c.id] != null);
   const applicableWeight = applicable.reduce((s, c) => s + c.weight, 0);
 
+  // raw = points in the checklist's own weights (yes = full weight, no = 0, scale = step / top step × weight);
+  // the total is earned / possible × 100 over the applicable criteria, so N/A never lowers it.
   const rows = {};
   for (const c of scored) {
     const frac = fraction(c, answers[c.id]);
     if (frac == null || applicableWeight === 0) {
-      rows[c.id] = { na: true, weight: c.weight, effWeight: 0, points: 0, frac: null };
+      rows[c.id] = { na: true, weight: c.weight, effWeight: 0, points: 0, raw: 0, frac: null };
       continue;
     }
     const effWeight = (c.weight * 100) / applicableWeight;
-    rows[c.id] = { na: false, weight: c.weight, effWeight, points: frac * effWeight, frac };
+    rows[c.id] = { na: false, weight: c.weight, effWeight, points: frac * effWeight, raw: frac * c.weight, frac };
   }
 
   const sections = checklist.sections.map(s => {
@@ -47,18 +49,27 @@ export function computeScore(checklist, answers) {
       hasScored: inSection.length > 0,
       points: round(inSection.reduce((a, c) => a + rows[c.id].points, 0), digits),
       max: round(inSection.reduce((a, c) => a + rows[c.id].effWeight, 0), digits),
+      rawPoints: round(inSection.reduce((a, c) => a + rows[c.id].raw, 0), digits),
+      rawMax: round(inSection.reduce((a, c) => a + (rows[c.id].na ? 0 : c.weight), 0), digits),
     };
   }).filter(s => s.hasScored);
 
-  const total = applicableWeight === 0
-    ? null
-    : round(Object.values(rows).reduce((a, r) => a + r.points, 0), digits);
+  const earned = Object.values(rows).reduce((a, r) => a + r.raw, 0);
+  const total = applicableWeight === 0 ? null : round((earned * 100) / applicableWeight, digits);
 
   const grossErrors = checklist.criteria
     .filter(c => c.type === 'flag' && answers[c.id] === 'yes')
     .map(c => c.id);
 
-  return { total, rows, sections, grossErrors, naIds: scored.filter(c => rows[c.id].na).map(c => c.id) };
+  return {
+    total,
+    earned: round(earned, digits),
+    possible: round(applicableWeight, digits),
+    rows,
+    sections,
+    grossErrors,
+    naIds: scored.filter(c => rows[c.id].na).map(c => c.id),
+  };
 }
 
 export const fmt = (n, d = 2) => (n == null ? '—' : n.toFixed(d));
