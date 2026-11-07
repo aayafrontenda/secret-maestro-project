@@ -40,6 +40,27 @@ export async function mountAnalytics(root) {
     const t = items.filter(i => i.row?.language === l).map(i => i.sc.total).filter(x => x != null);
     return { label: l, value: t.length ? t.reduce((a, b) => a + b, 0) / t.length : null, n: t.length };
   });
+  // Appeals per criterion: which criteria are disputed most, and what the reviewers decided.
+  const appealStats = Object.values(appeals.reduce((m, a) => {
+    const s = m[a.criterion_id] ||= {
+      id: a.criterion_id,
+      name: a.criterion_name || active.criteria.find(c => c.id === a.criterion_id)?.name || a.criterion_id,
+      total: 0, changed: 0, confirmed: 0, open: 0,
+    };
+    s.total++;
+    s[a.status === 'changed' ? 'changed' : a.status === 'confirmed' ? 'confirmed' : 'open']++;
+    return m;
+  }, {})).map(s => ({ ...s, evaluated: items.filter(i => i.ans[s.id] != null).length }))
+    .sort((x, y) => y.total - x.total || y.changed - x.changed);
+  const maxAppeals = Math.max(1, ...appealStats.map(s => s.total));
+  // A criterion reviewers often change is likely worded unclearly or scored wrong by the model;
+  // one they keep confirming is clear, but operators misread it.
+  function appealSignal(s) {
+    const decided = s.changed + s.confirmed;
+    if (decided >= 2 && s.changed / decided >= 0.5) return { tone: 'cqa-pill--red', text: 'Часто меняют: проверьте формулировку и правило оценки' };
+    if (decided >= 2 && s.confirmed / decided >= 0.7) return { tone: 'cqa-pill--amber', text: 'Оценку подтверждают: объясните правило операторам' };
+    return null;
+  }
   const bins = Array.from({ length: 10 }, (_, k) => ({ from: k * 10, to: k * 10 + 10, n: 0 }));
   totals.forEach(t => { bins[Math.min(9, Math.floor(t / 10))].n++; });
   const maxBin = Math.max(1, ...bins.map(b => b.n));
@@ -83,6 +104,21 @@ export async function mountAnalytics(root) {
                 h('td', null, `${p.c.code} · ${p.c.name}`), h('td', { class: 'cqa-num' }, p.n),
                 h('td', { class: 'cqa-num' }, p.c.type === 'flag' ? `выявлено в ${Math.round((p.rate || 0) * 100)}%` : p.rate == null ? '—' : `${Math.round(p.rate * 100)}%`),
                 h('td', { class: 'cqa-num' }, p.naRate == null ? '—' : `${Math.round(p.naRate * 100)}%`)))))),
+
+      h('section', { class: 'cqa-chart', id: 'cqa-appeal-analytics' },
+        h('div', { class: 'cqa-chart-head' }, h('h2', null, 'Апелляции по критериям'),
+          h('span', { class: 'cqa-muted' }, 'какие критерии оспаривают чаще всего и чем заканчиваются споры')),
+        appealStats.length === 0
+          ? h('p', { class: 'cqa-muted' }, 'Апелляций пока нет. Когда операторы начнут оспаривать оценки, здесь будет видно, какие критерии сформулированы неясно.')
+          : h('div', { class: 'cqa-hbars' }, appealStats.map(s => {
+              const signal = appealSignal(s);
+              const rate = s.evaluated ? ` · оспорено ${Math.round((s.total / s.evaluated) * 100)}% оценок` : '';
+              return h('div', { class: 'cqa-ap-stat' },
+                hbar(s.name, s.total / maxAppeals, String(s.total),
+                  `изменено ${s.changed} · подтверждено ${s.confirmed} · ждут ${s.open}${rate}`,
+                  `${s.name}: ${s.total} апелл., изменено ${s.changed}, подтверждено ${s.confirmed}, на рассмотрении ${s.open}`),
+                signal && h('span', { class: `cqa-pill ${signal.tone} cqa-ap-signal` }, icon('alert', 12), signal.text));
+            }))),
 
       h('div', { class: 'cqa-chart-row' },
         h('section', { class: 'cqa-chart' },

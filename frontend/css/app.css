@@ -663,3 +663,7 @@ a.cqa-tr.is-done .cqa-td--0 b { color: var(--cqa-ink-2); font-weight: 600; }
 /* Interface language */
 .cqa-lang-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 30px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--cqa-line); background: var(--cqa-bg); color: var(--cqa-ink-2); font-size: 12px; font-weight: 600; cursor: pointer; }
 .cqa-lang-btn:hover { color: var(--cqa-ink); border-color: var(--cqa-line-2); }
+
+/* Appeals per criterion */
+.cqa-ap-stat { display: flex; flex-direction: column; gap: 2px; }
+.cqa-ap-signal { align-self: flex-start; margin: 0 0 6px 4px; }
