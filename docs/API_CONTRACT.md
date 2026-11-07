@@ -210,6 +210,11 @@ Swagger — `/docs`. Ниже — уточнения и то, что есть с
 | GET | `/api/evaluations/:id` | Полная оценка — для polling |
 | POST | `/api/evaluations/:id/retry` | Повторить упавшую или отменённую оценку |
 | GET | `/api/appeals/:id` | Одна апелляция |
+| GET | `/api/attention` `?threshold=` | Очередь «Требуют внимания»: `{threshold, counts, items[{conversation_id, total, priority, reasons[{kind: grave\|failed\|appeal\|low_score\|model_fix, …}]}]}` |
+| GET | `/api/insights/handoffs` | Передачи бот → оператор: `by_topic`, `by_reason`, `avg_wait_s`, `items[]`, статус разбора LLM `job` |
+| POST | `/api/insights/handoffs/analyze` `{force?}` | Разобрать передачи LLM в фоне (`409`, если ключа нет) |
+| GET | `/api/insights/handoffs/knowledge` `?format=jsonl` | Пары «вопрос → ответ» для базы знаний бота, ПДн скрыты |
+| GET | `/api/dialogs/:id/handoff` | Передача в одном диалоге: тема, причина, ожидание, ответ бота и оператора; `null`, если бота не было |
 
 Массовая оценка во фронте («Оценить новые», «Переоценить по vN», «Переоценить по фильтру») идёт
 через батч на бэке: очередь живёт на сервере, страница только показывает прогресс. Можно уйти в

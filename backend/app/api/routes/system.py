@@ -16,7 +16,13 @@ async def health(session: SessionDep, settings: SettingsDep, ml: MLDep, queue: Q
     return {
         "status": "ok" if db_ok else "degraded",
         "database": "ok" if db_ok else "error",
-        "ml": {"provider": ml.name, "reachable": await ml.health()},
+        "ml": {
+            "provider": ml.name,
+            "model": getattr(ml, "model", None),
+            "reachable": await ml.health(),
+            "pii_masking": getattr(ml, "masks_pii", None),
+        },
+        "llm_insights": settings.llm_configured,
         "queue": queue.stats(),
         "environment": settings.environment,
     }

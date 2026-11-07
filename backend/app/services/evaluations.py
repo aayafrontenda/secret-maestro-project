@@ -76,10 +76,18 @@ async def create_batch(
 
 
 def _guidelines(snapshot: dict[str, Any]) -> list[str]:
-    notes = ((snapshot.get("document") or {}).get("rules") or {}).get("notes") or []
+    rules = (snapshot.get("document") or {}).get("rules") or {}
+    notes = rules.get("notes") or []
     if isinstance(notes, str):
         notes = notes.splitlines()
-    return [n.strip() for n in notes if isinstance(n, str) and n.strip()]
+    out = [n.strip() for n in notes if isinstance(n, str) and n.strip()]
+    threshold = rules.get("first_response_threshold_sec")
+    if threshold:
+        out.append(
+            f"Порог первой реакции — {int(threshold)} с: если клиент ждал ответа оператора дольше, "
+            "это явное ожидание."
+        )
+    return out
 
 
 def build_ml_request(dialog: Dialog, snapshot: dict[str, Any]) -> MLEvaluateRequest:

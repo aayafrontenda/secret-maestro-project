@@ -182,6 +182,13 @@ export const mockApi = {
     return a;
   },
 
+  // ---------- аналитика бэкенда (в моках недоступна) ----------
+  async getAttention() { return { threshold: 60, counts: { total: 0 }, items: [], mock: true }; },
+  async getHandoffs() { throw new Error('Раздел работает только с бэкендом (USE_MOCKS: false)'); },
+  async analyzeHandoffs() { throw new Error('Раздел работает только с бэкендом'); },
+  async getDialogHandoff() { return null; },
+  knowledgeUrl: () => null,
+
   // ---------- служебное ----------
   async resetAll() {
     Object.keys(localStorage).filter(k => k.startsWith('cqa.') && k !== 'cqa.role').forEach(k => localStorage.removeItem(k));

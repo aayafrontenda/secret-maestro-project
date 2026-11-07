@@ -70,6 +70,7 @@ class MLUsage(BaseModel):
     completion_tokens: int = 0
     calls: int = 0
     cost_usd: float = 0.0
+    pii_masked: int = 0
 
 
 class MLEvaluateResponse(BaseModel):

@@ -54,6 +54,24 @@ One GPU scores one dialog at a time, about 24 s each, so one queue worker is eno
 The contract is in [`docs/ml-contract.md`](docs/ml-contract.md). With `ML_PROVIDER=mock`
 (default) a built-in heuristic answers instead, so the UI works before the model is ready.
 
+### Evaluate with an LLM directly (OpenAI or a local OpenAI-compatible server)
+
+```
+ML_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4.1
+# local instead of cloud: OPENAI_BASE_URL=http://localhost:11434/v1 (Ollama), no key
+```
+
+One request per dialog grades every criterion of the checklist version being evaluated; the
+JSON schema is built from the checklist, so a new or edited criterion works without code changes
+and the model can only answer with values the criterion allows. Before text leaves the machine,
+IIN, card numbers, phones, e-mails and IBANs are masked (`PII_MASKING=true`; never for a local
+server). Tokens and cost are stored on each evaluation.
+
+With a key set (any `ML_PROVIDER`), the same LLM also analyses bot → operator handoffs
+(`POST /api/insights/handoffs/analyze`).
+
 ### Load the control dataset (hour 23)
 
 ```bash
@@ -138,6 +156,11 @@ Everything lives under `/api`; the request/response shapes are in
 | GET/POST | `/appeals` | List (`?evaluation_id=`, `?status=open|confirmed|changed`) / dispute a criterion |
 | GET | `/appeals/{id}` | One appeal |
 | POST | `/appeals/{id}/decision` `{action, answer, reason}` | Reviewer decision; final total recalculated |
+| GET | `/attention` | Review queue: grave violations, failed runs, open appeals, totals below `?threshold=` (default `ATTENTION_SCORE_THRESHOLD`), corrected model answers |
+| GET | `/insights/handoffs` | Bot → operator handoffs: topics, reasons, wait for the operator, per-dialog details, LLM job status |
+| POST | `/insights/handoffs/analyze` `{force?}` | Refine handoffs with the LLM in the background (`409` without a key) |
+| GET | `/insights/handoffs/knowledge` `?format=json|jsonl&min_total=80` | Question → answer pairs for the bot's knowledge base, personal data masked |
+| GET | `/dialogs/{id}/handoff` | Handoff analysis of one dialog (`null` without the bot) |
 
 **Long evaluations.** A real model takes 10–15 s per chat and a single GPU serialises calls, so
 `POST /evaluations` queues the job and waits up to `EVALUATION_WAIT_S` (default 85 s, under
@@ -183,10 +206,17 @@ differ by ±0.01.
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/cqa.db` | Any async SQLAlchemy URL (`postgresql+asyncpg://…` with `pip install -e ".[postgres]"`) |
 | `CORS_ORIGINS` | `*` | Comma-separated origins |
 | `ORGANIZER_API_URL` | — | The signed «Открыть GET для DEV» link from the task PDF, as is; its `group_id` is replaced per request |
-| `ML_PROVIDER` | `mock` | `mock` or `http` |
+| `ML_PROVIDER` | `mock` | `mock`, `http` or `openai` |
 | `ML_SERVICE_URL` | — | Base URL of the ML service (`/evaluate`, `/health`) |
 | `ML_TIMEOUT_S` / `ML_MAX_RETRIES` | `180` / `2` | Per-request timeout; retries on 5xx/network errors |
 | `ML_MOCK_DELAY_S` | `0` | Mock only: seconds per evaluation, to rehearse a slow model |
+| `OPENAI_API_KEY` | — | Enables `ML_PROVIDER=openai` and LLM handoff analysis |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible API; a local one (Ollama, vLLM) needs no key |
+| `OPENAI_MODEL` / `OPENAI_TEMPERATURE` | `gpt-4.1` / `0` | Model; leave the temperature empty for models that reject it |
+| `OPENAI_PRICE_INPUT_PER_1M` / `…_OUTPUT_…` | `2.0` / `8.0` | USD per 1M tokens for the cost shown per evaluation |
+| `PII_MASKING` | `true` | Mask personal data before it reaches a non-local LLM |
+| `OUTPUT_LANGUAGE` | `ru` | Language of model explanations |
+| `ATTENTION_SCORE_THRESHOLD` | `60` | Totals below this land in the attention queue |
 | `QUEUE_WORKERS` | `3` | Parallel evaluations against the ML service (`1` for one local GPU) |
 | `EVALUATION_WAIT_S` | `85` | How long `POST /api/evaluations` waits before returning the in-progress state |
 | `SEED_DEFAULT_CHECKLIST` | `true` | Create the PDF checklist on first start |

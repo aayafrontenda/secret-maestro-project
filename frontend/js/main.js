@@ -6,6 +6,8 @@ import { mountDialogs } from './views/dialogs.js';
 import { mountChecklist } from './views/checklist.js';
 import { mountAppeals } from './views/appeals.js';
 import { mountAnalytics } from './views/analytics.js';
+import { mountAttention } from './views/attention.js';
+import { mountBot } from './views/bot.js';
 
 const root = document.getElementById('cqa-root');
 root.classList.add('cqa', 'cqa-app');
@@ -20,9 +22,11 @@ const ROLES = [
 ];
 const NAV = [
   { key: 'dialogs', href: '#/dialogs', label: 'Диалоги', icon: 'chat' },
+  { key: 'attention', href: '#/attention', label: 'Внимание', icon: 'alert' },
   { key: 'checklists', href: '#/checklists', label: 'Чек-лист', icon: 'list' },
   { key: 'appeals', href: '#/appeals', label: 'Апелляции', icon: 'gavel' },
   { key: 'analytics', href: '#/analytics', label: 'Аналитика', icon: 'chart' },
+  { key: 'bot', href: '#/bot', label: 'Бот → оператор', icon: 'spark' },
 ];
 
 const main = h('main', { class: 'cqa-main' });
@@ -76,6 +80,10 @@ async function route() {
     renderNav('checklists'); view = await mountChecklist(main, ctx);
   } else if (section === 'appeals') {
     renderNav('appeals'); view = await mountAppeals(main, ctx);
+  } else if (section === 'attention') {
+    renderNav('attention'); view = await mountAttention(main, ctx);
+  } else if (section === 'bot') {
+    renderNav('bot'); view = await mountBot(main, ctx);
   } else if (section === 'analytics') {
     renderNav('analytics'); view = await mountAnalytics(main, ctx);
   } else {

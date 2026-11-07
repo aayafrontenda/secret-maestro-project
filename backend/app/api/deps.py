@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.ml.base import MLClient
+from app.services.handoff import HandoffAnalyzer
 from app.services.queue import EvaluationQueue
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
@@ -22,3 +23,10 @@ def get_ml(request: Request) -> MLClient:
 
 QueueDep = Annotated[EvaluationQueue, Depends(get_queue)]
 MLDep = Annotated[MLClient, Depends(get_ml)]
+
+
+def get_handoff(request: Request) -> HandoffAnalyzer:
+    return request.app.state.handoff
+
+
+HandoffDep = Annotated[HandoffAnalyzer, Depends(get_handoff)]

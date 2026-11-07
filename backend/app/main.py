@@ -13,7 +13,8 @@ from app.core.config import BACKEND_ROOT, Settings, get_settings
 from app.core.db import dispose_engine, get_session_factory
 from app.core.logging import setup_logging
 from app.core.migrations import run_migrations
-from app.ml import build_ml_client
+from app.ml import build_llm_chat, build_ml_client
+from app.services import handoff
 from app.services.checklists import ensure_default_checklist
 from app.services.queue import EvaluationQueue
 
@@ -32,11 +33,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             async with session_factory() as session:
                 await ensure_default_checklist(session)
                 await session.commit()
+        async with session_factory() as session:
+            if await handoff.backfill(session):
+                await session.commit()
         app.state.ml = build_ml_client(settings)
         app.state.queue = EvaluationQueue(
             session_factory, app.state.ml, workers=settings.queue_workers
         )
         await app.state.queue.start()
+        app.state.llm_chat = build_llm_chat(settings)
+        app.state.handoff = handoff.HandoffAnalyzer(
+            session_factory,
+            app.state.llm_chat,
+            mask=settings.pii_masking,
+            language=settings.output_language,
+        )
         log.info(
             "%s started (ml=%s, workers=%d)",
             settings.app_name,
@@ -46,7 +57,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            await app.state.handoff.stop()
             await app.state.queue.stop()
+            if app.state.llm_chat:
+                await app.state.llm_chat.aclose()
             await app.state.ml.aclose()
             await dispose_engine()
 

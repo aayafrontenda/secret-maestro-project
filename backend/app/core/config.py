@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
@@ -29,12 +29,30 @@ class Settings(BaseSettings):
     organizer_api_timeout_s: float = 60.0
 
     # ML evaluation provider.
-    ml_provider: Literal["mock", "http"] = "mock"
+    # mock: built-in heuristics; http: the ML team's service; openai: any OpenAI-compatible API.
+    ml_provider: Literal["mock", "http", "openai"] = "mock"
     ml_service_url: str | None = None  # e.g. http://localhost:8001
     ml_timeout_s: float = 180.0
     ml_max_retries: int = 2
     # Artificial latency of the mock provider, to rehearse slow-model behaviour (polling, batches).
     ml_mock_delay_s: float = Field(default=0.0, ge=0, le=300)
+
+    # OpenAI-compatible LLM (ML_PROVIDER=openai, and bot handoff analysis when a key is set).
+    # OPENAI_BASE_URL may point to a local server (Ollama: http://localhost:11434/v1).
+    openai_api_key: str | None = None
+    openai_base_url: str = "https://api.openai.com/v1"
+    openai_model: str = "gpt-4.1"
+    openai_temperature: float | None = 0.0  # empty for models that reject it
+    openai_timeout_s: float = 120.0
+    openai_price_input_per_1m: float = 2.0
+    openai_price_output_per_1m: float = 8.0
+    # Mask IIN, cards, phones, e-mails and IBANs before text goes to a non-local LLM.
+    pii_masking: bool = True
+    # Language of model explanations: ru | kk | en.
+    output_language: str = "ru"
+
+    # Attention queue: completed evaluations below this total are flagged.
+    attention_score_threshold: float = Field(default=60.0, ge=0, le=100)
 
     # In-process evaluation queue.
     queue_workers: int = Field(default=3, ge=1, le=32)
@@ -48,6 +66,16 @@ class Settings(BaseSettings):
     # Serve the frontend (../frontend) from the same origin: one port, one tunnel, no CORS.
     serve_frontend: bool = True
     frontend_dir: str | None = None  # defaults to <repo>/frontend
+
+    @field_validator("openai_temperature", mode="before")
+    @classmethod
+    def _blank_is_none(cls, v):
+        return None if isinstance(v, str) and not v.strip() else v
+
+    @property
+    def llm_configured(self) -> bool:
+        local = any(h in self.openai_base_url for h in ("localhost", "127.0.0.1"))
+        return bool(self.openai_api_key) or local
 
 
 @lru_cache

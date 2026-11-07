@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { computeScore, fmt, scaleMax } from '../scoring.js';
 import { h, fill, offsetsOf, mmss, clockOf, SPEAKER, reducedMotion, toast } from '../util.js';
 import { icon } from '../icons.js';
+import { REASON } from './bot.js';
 
 const TYPE_LABEL = { binary: 'Да / Нет', scale: 'Шкала', flag: 'Флаг · без баллов' };
 const LANG = { RU: 'Русский', KZ: 'Қазақша', EN: 'English' };
@@ -23,7 +24,7 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
     const [dialog, checklist, list] = await Promise.all([api.getDialog(id), api.getActiveChecklist(), api.listDialogs()]);
     Object.assign(S, { dialog, checklist, ids: list.map(d => d.conversation_id), offsets: offsetsOf(dialog.transcript) });
     S.active = checklist;
-    S.evaluation = await api.getEvaluation(id);
+    [S.evaluation, S.handoff] = await Promise.all([api.getEvaluation(id), api.getDialogHandoff(id)]);
     if (S.evaluation) {
       S.checklist = S.evaluation.checklist || checklist;
       S.appeals = await api.listAppeals({ evaluation_id: S.evaluation.evaluation_id });
@@ -199,6 +200,21 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
     }
   }
 
+  // ---------- передача от бота оператору ----------
+  function handoffBlock() {
+    const x = S.handoff;
+    if (!x?.escalated) return null;
+    return h('section', { class: 'cqa-handoff', 'aria-label': 'Передача от бота' },
+      h('h3', null, icon('spark', 14), 'Передача от бота', h('a', { class: 'cqa-link', href: '#/bot', style: { marginLeft: 'auto', fontWeight: 400 } }, 'все')),
+      h('dl', { class: 'cqa-qa' },
+        h('dt', null, 'Тема · причина'), h('dd', null, `${x.topic || 'Другое'} · ${REASON[x.reason] || '—'}`),
+        x.wait_s != null && [h('dt', null, 'Оператор подключился через'), h('dd', { class: 'cqa-num' }, mmss(x.wait_s))],
+        x.bot_answer && [h('dt', null, 'Бот ответил'), h('dd', null,
+          x.bot_answer_index != null ? h('button', { class: 'cqa-link', onclick: () => jumpTo(x.bot_answer_index, { play: false }) }, x.bot_answer) : x.bot_answer)],
+        x.bot_gap && [h('dt', null, 'Чего не хватило боту'), h('dd', null, x.bot_gap)],
+        x.suggested_bot_answer && [h('dt', { class: 'is-new' }, 'Бот мог бы ответить'), h('dd', { class: 'is-new' }, x.suggested_bot_answer)]));
+  }
+
   // ---------- правая колонка: итог ----------
   function renderSum() {
     const cl = S.checklist;
@@ -211,7 +227,8 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
       fill(sumEl, h('div', { class: 'cqa-sum-inner' },
         h('div', { class: 'cqa-overall' }, h('span', { class: 'cqa-overall-label' }, 'Итоговая оценка'), h('span', { class: 'cqa-total' }, '—')),
         btn,
-        h('p', { class: 'cqa-muted' }, `Модель читает ${S.dialog.transcript.length} реплик и проверяет ${cl.criteria.length} критериев.`)));
+        h('p', { class: 'cqa-muted' }, `Модель читает ${S.dialog.transcript.length} реплик и проверяет ${cl.criteria.length} критериев.`),
+        handoffBlock()));
       return;
     }
 
@@ -282,6 +299,7 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
         h('dt', null, 'Чек-лист'), h('dd', null, `v${ev.checklist_version}`,
           ev.checklist_version !== S.active.version && h('span', { class: 'cqa-stale' }, ` · активна v${S.active.version}`)),
         h('dt', null, 'Оценено'), h('dd', { class: 'cqa-num' }, new Date(ev.created_at).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }))),
+      handoffBlock(),
     ));
   }
 

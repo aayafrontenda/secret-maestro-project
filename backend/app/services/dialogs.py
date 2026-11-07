@@ -6,6 +6,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models import Dialog, Evaluation
 from app.schemas.dialog import DialogIn
+from app.services import handoff
 
 
 def normalize_transcript(messages: Iterable) -> list[dict]:
@@ -45,6 +46,7 @@ async def upsert_dialogs(
             created += 1
         else:
             updated += 1
+        changed = d.transcript != transcript or d.channel != r.channel
         d.channel = r.channel
         d.language = r.language
         d.transcript = transcript
@@ -52,6 +54,8 @@ async def upsert_dialogs(
         d.audio_url = r.audio_url
         d.source = source
         d.dataset_group_id = dataset_group_id
+        if changed or d.handoff_source is None:
+            handoff.refresh(d)
     await session.flush()
     return created, updated, ids
 
