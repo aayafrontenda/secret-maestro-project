@@ -117,7 +117,7 @@ export async function mountBot(root) {
                   d.llm_analysed < d.escalated ? `Разобрать ${d.escalated - d.llm_analysed}` : 'Всё разобрано'),
                 d.llm_analysed > 0 && h('button', { class: 'cqa-btn cqa-btn--ghost cqa-btn--sm cqa-btn--left', onclick: () => analyze(true) }, icon('refresh', 14), 'Разобрать заново'),
               ],
-        job.available && h('p', { class: 'cqa-muted' }, `Модель ${job.model}. Тема, причина, чего не хватило боту и черновик ответа для него.${job.cost_usd ? ` Потрачено $${job.cost_usd.toFixed(4)}.` : ''}`)),
+        job.available && h('p', { class: 'cqa-muted' }, `Модель ${job.model}. Тема, причина, чего не хватило боту и черновик ответа для него.`, job.cost_usd ? [' ', h('span', null, `Потрачено $${job.cost_usd.toFixed(4)}.`)] : null)),
       sideBlock('База знаний для бота',
         h('p', { class: 'cqa-muted' }, 'Пары «вопрос клиента → ответ» в JSONL: черновики LLM и ответы операторов с итогом от 80. Персональные данные скрыты.'),
         api.knowledgeUrl() && h('a', { class: 'cqa-btn cqa-btn--outline cqa-btn--sm', href: api.knowledgeUrl(), download: 'bot-knowledge.jsonl' }, icon('layers', 14), 'Скачать JSONL')),

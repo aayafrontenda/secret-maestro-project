@@ -43,7 +43,7 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
   const docEl = h('section', { class: 'cqa-doc', 'aria-label': 'Транскрипт' });
   const critEl = h('section', { class: 'cqa-crits', 'aria-label': 'Критерии' });
   const sumEl = h('aside', { class: 'cqa-sum', 'aria-label': 'Итог' });
-  let scroller, msgEls = [], tickEls = [];
+  let scroller, msgEls = [], tickEls = [], momentsEl = null, markLayer = null;
   const beams = svgBeams();
   fill(root, h('div', { class: 'cqa-card' }, docEl, critEl, sumEl), beams.el);
 
@@ -58,7 +58,7 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
     return a;
   };
   const activeId = () => S.pinned || S.hover;
-  const rerender = () => { renderCrits(); renderSum(); applyHighlights(); };
+  const rerender = () => { renderCrits(); renderSum(); applyHighlights(); renderMoments(); };
 
   // ---------- центр: транскрипт ----------
   function buildDoc() {
@@ -87,7 +87,8 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
       const playhead = h('div', { class: 'cqa-playhead', style: { display: 'none' } });
       const timeEl = h('span', { class: 'cqa-audio-time' }, `00:00 / ${mmss(total)}`);
       const playBtn = h('button', { class: 'cqa-play', disabled: true, title: 'Запись загружается…', 'aria-label': 'Воспроизвести' }, icon('play', 16));
-      audioBar = h('div', { class: 'cqa-audio' }, playBtn, h('div', { class: 'cqa-timeline' }, tickEls, playhead), timeEl,
+      markLayer = h('div', { class: 'cqa-marks' });
+      audioBar = h('div', { class: 'cqa-audio' }, playBtn, h('div', { class: 'cqa-timeline' }, tickEls, markLayer, playhead), timeEl,
         h('a', { href: S.dialog.audio_url, target: '_blank', rel: 'noopener' }, 'Плеер', icon('external', 13)));
       api.getAudio(S.id).then(a => {
         if (!a?.url) { playBtn.title = 'Прямой mp3 отдаёт бэкенд (GET /dialogs/:id/audio). Пока — внешний плеер.'; return; }
@@ -129,10 +130,53 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
             h('span', null, h('i', { class: 'is-operator' }), 'оператор'),
             h('span', null, h('i', { class: 'is-bot' }), 'бот · контекст'))),
         audioBar,
+        momentsEl = h('div', { class: 'cqa-moments' }),
         h('div', { class: 'cqa-msgs' }, msgEls),
       ),
     );
     fill(docEl, scroller, h('div', { class: 'cqa-scan', 'aria-hidden': 'true' }));
+    renderMoments();
+  }
+
+  // ---------- problem moments: where the operator lost points, linked to the audio ----------
+  function problemMoments() {
+    if (!S.evaluation) return [];
+    const fin = finalAnswers();
+    const out = [];
+    for (const c of S.checklist.criteria) {
+      const a = fin[c.id];
+      const r = resultOf(c.id);
+      if (!r || a == null || a === 'na') continue;
+      const bad = c.type === 'flag' ? a === 'yes' : c.type === 'scale' ? Number(a) < scaleMax(c) : a === 'no';
+      if (!bad) continue;
+      const k = r.evidence?.[0]?.msg ?? r.checked_range?.[0];
+      if (k == null || !S.dialog.transcript[k]) continue;
+      out.push({ cid: c.id, code: c.code, name: c.name, k, grave: c.type === 'flag', at: S.offsets[k] ?? 0 });
+    }
+    return out.sort((x, y) => x.k - y.k);
+  }
+
+  function openMoment(m) {
+    if (S.pinned !== m.cid) setPinned(m.cid, { scroll: false });
+    jumpTo(m.k, { play: !!S.audio });
+  }
+
+  function renderMoments() {
+    if (!momentsEl) return;
+    const list = problemMoments();
+    const isCall = S.dialog.channel === 'voice call';
+    const total = isCall ? Math.max(1, ...S.offsets) : 1;
+    if (markLayer) {
+      fill(markLayer, list.map(m => h('button', {
+        class: `cqa-pmark ${m.grave ? 'is-grave' : ''}`, style: { left: `${(m.at / total) * 100}%` },
+        title: `${m.code} ${m.name} · ${mmss(m.at)}`, 'aria-label': `${m.name}, ${mmss(m.at)}`, onclick: () => openMoment(m),
+      })));
+    }
+    fill(momentsEl, list.length > 0 && [
+      h('span', { class: 'cqa-moments-label' }, icon('alert', 13), isCall ? 'Проблемные моменты записи' : 'Проблемные моменты'),
+      list.map(m => h('button', { class: `cqa-moment ${m.grave ? 'is-grave' : ''} ${S.pinned === m.cid ? 'is-active' : ''}`, onclick: () => openMoment(m), title: m.name },
+        isCall && icon('play', 11), h('b', { class: 'cqa-num' }, isCall ? mmss(m.at) : `#${m.k + 1}`), h('span', null, `${m.code} · ${m.name}`))),
+    ]);
   }
 
   function seek(k) { if (S.audio && S.offsets[k] != null) { S.audio.currentTime = S.offsets[k]; S.audio.play(); } }
@@ -167,7 +211,7 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
 
   function setPinned(cid, { scroll = true } = {}) {
     S.pinned = S.pinned === cid ? null : cid;
-    renderCrits(); applyHighlights();
+    renderCrits(); applyHighlights(); renderMoments();
     const r = resultOf(S.pinned);
     if (scroll && r) {
       const first = r.evidence?.[0]?.msg ?? r.checked_range?.[0];

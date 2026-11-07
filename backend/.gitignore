@@ -17,3 +17,6 @@ data/*.db-*
 .DS_Store
 .idea/
 .vscode/
+
+# Provider chosen in the UI
+data/runtime.json

@@ -8,6 +8,7 @@ import { pageLayout, pageHead, tabs, input, sideBlock, stat, emptyState, pickFil
 import { REVIEW, needsAction, byPriority, nextInQueue, reviewerName, setReviewerName } from '../worklist.js';
 
 const LANG = { RU: 'RU', KZ: 'KZ', EN: 'EN' };
+const ML_KIND = { cloud: 'Облако', local: 'Локальная', demo: 'Демо без модели' };
 const STATUSES = ['todo', 'appeal', 'to_review', 'reviewed', 'none', 'gross', 'stale', 'all'];
 const DEFAULT_F = { lang: 'all', channel: 'all', status: 'todo', q: '', sort: 'priority' };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -20,12 +21,13 @@ export async function mountDialogs(root) {
     batch: null, // { total, done, failed, stop, label }
   };
   if (!STATUSES.includes(S.f.status)) S.f.status = 'todo';
+  S.ml = null;
   const L = pageLayout();
   fill(root, L.el);
 
   async function load() {
     try {
-      [S.rows, S.active] = await Promise.all([api.listDialogs(), api.getActiveChecklist()]);
+      [S.rows, S.active, S.ml] = await Promise.all([api.listDialogs(), api.getActiveChecklist(), api.getML().catch(() => null)]);
       S.error = null;
     } catch (e) { S.error = e.message; }
   }
@@ -146,6 +148,22 @@ export async function mountDialogs(root) {
           icon(first ? 'arrowRight' : 'check', 16), first ? 'Начать проверку' : 'Очередь пуста'),
         h('p', { class: 'cqa-muted' }, 'Сначала апелляции, потом грубые ошибки, потом самые низкие баллы. В карточке нажмите «Проверено → следующий».'),
         h('label', { class: 'cqa-label' }, 'Проверяющий'), nameInput),
+
+      S.ml && S.ml.providers.length > 1 && sideBlock('Модель оценки',
+        h('div', { class: 'cqa-ml-list', role: 'radiogroup', 'aria-label': 'Модель оценки' }, S.ml.providers.map(p => h('button', {
+          class: `cqa-ml ${p.active ? 'is-active' : ''}`, role: 'radio', 'aria-checked': String(p.active), disabled: !!S.batch,
+          onclick: async () => {
+            if (p.active) return;
+            if (!p.reachable) { toast('Модель не отвечает: проверьте, что сервис запущен', { icon: icon('alert', 16) }); return; }
+            try { S.ml = await api.setML(p.id); renderSide(); toast(`Новые оценки: ${ML_KIND[p.kind]}${p.model ? ` · ${p.model}` : ''}`, { icon: icon('check', 16) }); }
+            catch (e) { toast(e.message, { icon: icon('alert', 16) }); }
+          },
+        },
+          h('i', { class: `cqa-ml-dot ${p.reachable ? 'is-ok' : 'is-bad'}`, title: p.reachable ? 'доступна' : 'не отвечает' }),
+          h('span', { class: 'cqa-ml-name' }, ML_KIND[p.kind] || p.kind),
+          h('span', { class: 'cqa-ml-model' }, p.model || (p.id === 'http' ? 'сервис ML' : '')),
+        ))),
+        h('p', { class: 'cqa-muted' }, 'Переключает модель для новых оценок без перезапуска. Готовые оценки хранят свою модель — их можно сравнить.')),
 
       sideBlock('Данные',
         h('div', { class: 'cqa-inline' }, groupInput,

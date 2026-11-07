@@ -210,6 +210,9 @@ export const mockApi = {
     return ev;
   },
 
+  async getML() { return { active: 'mock', providers: [{ id: 'mock', kind: 'demo', model: 'heuristics', endpoint: null, active: true, reachable: true }] }; },
+  async setML() { return this.getML(); },
+
   // ---------- backend-only analytics ----------
   async getAttention() { return { threshold: 60, counts: { total: 0 }, items: [], mock: true }; },
   async getHandoffs() { throw new Error('Раздел работает только с бэкендом (USE_MOCKS: false)'); },

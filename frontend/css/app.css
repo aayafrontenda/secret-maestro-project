@@ -636,3 +636,30 @@ a.cqa-tr.is-done .cqa-td--0 b { color: var(--cqa-ink-2); font-weight: 600; }
 .cqa-review .cqa-input { height: 34px; }
 .cqa-review-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 .cqa-review-actions .cqa-btn { flex: 1 1 auto; }
+
+/* Evaluation provider switch */
+.cqa-ml-list { display: flex; flex-direction: column; gap: 6px; }
+.cqa-ml { display: grid; grid-template-columns: 10px auto 1fr; align-items: center; gap: 8px; padding: 9px 12px; border-radius: var(--cqa-r-md); background: var(--cqa-surface); text-align: left; font-size: 13.5px; border: 1px solid transparent; }
+.cqa-ml:hover:not(:disabled) { border-color: var(--cqa-line); }
+.cqa-ml.is-active { background: var(--cqa-mint-bg); border-color: var(--cqa-green); font-weight: 600; }
+.cqa-ml-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cqa-ink-3, #b7bdc6); }
+.cqa-ml-dot.is-ok { background: var(--cqa-green); }
+.cqa-ml-dot.is-bad { background: var(--cqa-red); }
+.cqa-ml-model { color: var(--cqa-ink-2); font-weight: 400; justify-self: end; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Problem moments: markers on the audio timeline and a strip of jump chips */
+.cqa-marks { position: absolute; inset: 0; pointer-events: none; }
+.cqa-pmark { position: absolute; top: -3px; width: 12px; height: 12px; transform: translateX(-50%) rotate(45deg); border-radius: 2px; border: 2px solid #fff; background: var(--cqa-amber); box-shadow: 0 1px 4px rgba(0, 0, 0, .25); cursor: pointer; pointer-events: auto; padding: 0; z-index: 2; }
+.cqa-pmark.is-grave { background: var(--cqa-red); }
+.cqa-pmark:hover, .cqa-pmark:focus-visible { transform: translateX(-50%) rotate(45deg) scale(1.25); }
+.cqa-moments { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; }
+.cqa-moments:empty { display: none; }
+.cqa-moments-label { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--cqa-ink-2); margin-right: 2px; }
+.cqa-moment { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--cqa-amber); background: var(--cqa-amber-bg); color: var(--cqa-amber-ink); font-size: 12.5px; cursor: pointer; max-width: 100%; }
+.cqa-moment span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 26ch; }
+.cqa-moment.is-grave { border-color: var(--cqa-red); background: var(--cqa-red-bg); color: var(--cqa-red-ink); }
+.cqa-moment.is-active { box-shadow: 0 0 0 2px currentColor inset; }
+
+/* Interface language */
+.cqa-lang-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 30px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--cqa-line); background: var(--cqa-bg); color: var(--cqa-ink-2); font-size: 12px; font-weight: 600; cursor: pointer; }
+.cqa-lang-btn:hover { color: var(--cqa-ink); border-color: var(--cqa-line-2); }

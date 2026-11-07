@@ -210,6 +210,7 @@ Swagger — `/docs`. Ниже — уточнения и то, что есть с
 | GET | `/api/evaluations/:id` | Полная оценка — для polling |
 | POST | `/api/evaluations/:id/retry` | Повторить упавшую или отменённую оценку |
 | GET | `/api/appeals/:id` | Одна апелляция |
+| GET / PUT | `/api/ml` `{provider}` | Модели оценки: `{active, providers[{id: openai\|http\|mock, kind: cloud\|local\|demo, model, endpoint, reachable, active}]}`; `PUT` переключает модель для новых оценок без перезапуска |
 | GET | `/api/attention` `?threshold= ?include_reviewed=` | Очередь «Требуют внимания»: `{threshold, counts, items[{conversation_id, total, priority, reasons[{kind: grave\|failed\|appeal\|low_score\|model_fix, …}]}]}`. Проверенные диалоги без открытых апелляций скрыты |
 | POST / DELETE | `/api/evaluations/:id/review` `{by?, note?}` | Отметить оценку как проверенную / вернуть в работу. `409`, пока есть открытые апелляции. Решение по последней апелляции отмечает оценку проверенной автоматически |
 | GET | `/api/insights/handoffs` | Передачи бот → оператор: `by_topic`, `by_reason`, `avg_wait_s`, `items[]`, статус разбора LLM `job` |

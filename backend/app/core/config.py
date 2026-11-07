@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     # mock: built-in heuristics; http: the ML team's service; openai: any OpenAI-compatible API.
     ml_provider: Literal["mock", "http", "openai"] = "mock"
     ml_service_url: str | None = None  # e.g. http://localhost:8001
+    # Which provider the UI switched to last time (survives restarts). Empty to disable.
+    runtime_state_file: Path | None = BACKEND_ROOT / "data" / "runtime.json"
     ml_timeout_s: float = 180.0
     ml_max_retries: int = 2
     # Artificial latency of the mock provider, to rehearse slow-model behaviour (polling, batches).
@@ -68,6 +70,11 @@ class Settings(BaseSettings):
     # Serve the frontend (../frontend) from the same origin: one port, one tunnel, no CORS.
     serve_frontend: bool = True
     frontend_dir: str | None = None  # defaults to <repo>/frontend
+
+    @field_validator("runtime_state_file", "openai_reasoning_effort", mode="before")
+    @classmethod
+    def _blank_is_none_str(cls, v):
+        return None if isinstance(v, str) and not v.strip() else v
 
     @field_validator("openai_temperature", mode="before")
     @classmethod

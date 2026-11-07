@@ -119,6 +119,10 @@ const httpApi = {
   markReviewed: (evaluation_id, body = {}) => req(`/evaluations/${evaluation_id}/review`, { method: 'POST', body }).then(normEvaluation),
   unmarkReviewed: evaluation_id => req(`/evaluations/${evaluation_id}/review`, { method: 'DELETE' }).then(normEvaluation),
 
+  // Evaluation providers: cloud, local ML service, demo; switchable at runtime.
+  getML: () => req('/ml'),
+  setML: provider => req('/ml', { method: 'PUT', body: { provider } }),
+
   // Attention queue and bot handoff insights.
   getAttention: (threshold, include_reviewed = false) => req(`/attention${qs({ threshold, include_reviewed: include_reviewed || null })}`),
   getHandoffs: () => req('/insights/handoffs'),

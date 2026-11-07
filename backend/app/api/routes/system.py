@@ -1,4 +1,5 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy import text
 
 from app.api.deps import MLDep, QueueDep, SessionDep, SettingsDep
@@ -31,3 +32,25 @@ async def health(session: SessionDep, settings: SettingsDep, ml: MLDep, queue: Q
 @router.get("/queue")
 async def queue_stats(queue: QueueDep):
     return queue.stats()
+
+
+@router.get("/ml")
+async def ml_providers(ml: MLDep):
+    """Configured evaluation providers (cloud, local ML service, demo) and the active one."""
+    return await ml.describe()
+
+
+class MLSwitch(BaseModel):
+    provider: str
+
+
+@router.put("/ml")
+async def switch_ml(body: MLSwitch, ml: MLDep):
+    """Grade new evaluations with another provider; finished verdicts keep their model."""
+    try:
+        ml.switch(body.provider)
+    except KeyError:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"Провайдер «{body.provider}» не настроен в backend/.env"
+        ) from None
+    return await ml.describe()

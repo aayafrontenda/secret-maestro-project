@@ -14,7 +14,7 @@ from app.core.config import BACKEND_ROOT, Settings, get_settings
 from app.core.db import dispose_engine, get_session_factory
 from app.core.logging import setup_logging
 from app.core.migrations import run_migrations
-from app.ml import GatedMLClient, build_llm_chat, build_ml_client, ml_is_local
+from app.ml import build_llm_chat, build_ml_clients
 from app.services import handoff
 from app.services.checklists import ensure_default_checklist
 from app.services.queue import EvaluationQueue
@@ -38,14 +38,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             if await handoff.backfill(session):
                 await session.commit()
         app.state.llm_chat = build_llm_chat(settings)
-        ml = build_ml_client(settings)
         # One local GPU cannot serve the evaluation model and handoff analysis at once
-        # (Ollama falls over): both go through the same lock.
-        gate = None
-        if ml_is_local(settings) and app.state.llm_chat and app.state.llm_chat.is_local:
-            gate = asyncio.Lock()
-            ml = GatedMLClient(ml, gate)
-        app.state.ml = ml
+        # (Ollama falls over): local calls of both go through the same lock.
+        chat_local = bool(app.state.llm_chat and app.state.llm_chat.is_local)
+        gate = asyncio.Lock() if chat_local else None
+        app.state.ml = build_ml_clients(settings, app.state.llm_chat, gate)
         app.state.queue = EvaluationQueue(
             session_factory, app.state.ml, workers=settings.queue_workers
         )
@@ -55,7 +52,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             app.state.llm_chat,
             mask=settings.pii_masking,
             language=settings.output_language,
-            concurrency=1 if app.state.llm_chat and app.state.llm_chat.is_local else 4,
+            concurrency=1 if chat_local else 4,
             gate=gate,
         )
         log.info(

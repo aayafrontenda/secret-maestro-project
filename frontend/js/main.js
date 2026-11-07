@@ -8,6 +8,7 @@ import { mountAppeals } from './views/appeals.js';
 import { mountAnalytics } from './views/analytics.js';
 import { mountAttention } from './views/attention.js';
 import { mountBot } from './views/bot.js';
+import { LANGS, lang, setLang, startI18n } from './i18n.js';
 
 const root = document.getElementById('cqa-root');
 root.classList.add('cqa', 'cqa-app');
@@ -50,11 +51,17 @@ fill(root,
       h('span', { class: 'cqa-mark' }, icon('scan', 16)),
       h('span', { class: 'cqa-brand-text' }, h('b', null, 'CQA'), h('span', null, 'Контроль качества'))),
     navBox,
-    h('div', { class: 'cqa-rail-foot' }, h('span', { class: 'cqa-rail-label' }, 'Роль'), roleBox),
+    h('div', { class: 'cqa-rail-foot' },
+      h('button', {
+        class: 'cqa-lang-btn', title: 'Язык интерфейса', 'aria-label': 'Язык интерфейса',
+        onclick: () => { const i = LANGS.findIndex(l => l.id === lang()); setLang(LANGS[(i + 1) % LANGS.length].id); },
+      }, icon('globe', 14), h('span', null, LANGS.find(l => l.id === lang()).label)),
+      h('span', { class: 'cqa-rail-label' }, 'Роль'), roleBox),
   ),
   main,
   h('div', { class: 'cqa-toasts', 'aria-live': 'polite' }),
 );
+startI18n();
 
 function parse(hash) {
   const [path, query = ''] = hash.replace(/^#/, '').split('?');

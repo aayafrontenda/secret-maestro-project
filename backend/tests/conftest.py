@@ -37,6 +37,7 @@ async def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterat
     monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("LOG_LEVEL", "WARNING")
     monkeypatch.setenv("SERVE_FRONTEND", "false")
+    monkeypatch.setenv("RUNTIME_STATE_FILE", str(tmp_path / "runtime.json"))
 
     from app.core import config, db
 
