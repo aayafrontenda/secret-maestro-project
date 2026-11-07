@@ -43,6 +43,8 @@ class Settings(BaseSettings):
     openai_base_url: str = "https://api.openai.com/v1"
     openai_model: str = "gpt-4.1"
     openai_temperature: float | None = 0.0  # empty for models that reject it
+    # Optional: none | low | medium | high for reasoning models (cost and latency vs care).
+    openai_reasoning_effort: str | None = None
     openai_timeout_s: float = 120.0
     openai_price_input_per_1m: float = 2.0
     openai_price_output_per_1m: float = 8.0

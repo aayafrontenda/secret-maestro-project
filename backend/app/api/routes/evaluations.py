@@ -7,6 +7,7 @@ from sqlalchemy import select
 from app.api import serializers as ser
 from app.api.deps import QueueDep, SessionDep, SettingsDep
 from app.models import Dialog, Evaluation
+from app.models.appeal import AppealStatus
 from app.models.evaluation import EvaluationStatus
 from app.services import checklists as checklist_service
 from app.services import dialogs as dialog_service
@@ -181,4 +182,36 @@ async def retry_evaluation(evaluation_id: int, session: SessionDep, queue: Queue
     ev.error = None
     await session.commit()
     queue.enqueue(ev.id)
+    return ser.evaluation(await _get_or_404(session, evaluation_id))
+
+
+class ReviewBody(BaseModel):
+    by: str | None = Field(default=None, max_length=100, description="Reviewer name")
+    note: str | None = Field(default=None, max_length=4000)
+
+
+@router.post("/{evaluation_id}/review")
+async def review_evaluation(
+    evaluation_id: int, session: SessionDep, body: ReviewBody | None = None
+):
+    """Mark the verdict as checked by a supervisor (closes the dialog in the worklist)."""
+    ev = await _get_or_404(session, evaluation_id)
+    if ev.status != EvaluationStatus.completed:
+        raise HTTPException(status.HTTP_409_CONFLICT, "Проверить можно только завершённую оценку")
+    if any(a.status == AppealStatus.pending for r in ev.results for a in r.appeals):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Есть открытые апелляции: сначала примите по ним решение"
+        )
+    body = body or ReviewBody()
+    evaluation_service.mark_reviewed(ev, by=body.by, note=body.note)
+    await session.commit()
+    return ser.evaluation(await _get_or_404(session, evaluation_id))
+
+
+@router.delete("/{evaluation_id}/review")
+async def unreview_evaluation(evaluation_id: int, session: SessionDep):
+    """Return the dialog to the worklist."""
+    ev = await _get_or_404(session, evaluation_id)
+    evaluation_service.clear_review(ev)
+    await session.commit()
     return ser.evaluation(await _get_or_404(session, evaluation_id))

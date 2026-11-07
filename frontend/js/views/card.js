@@ -4,6 +4,7 @@ import { computeScore, fmt, scaleMax } from '../scoring.js';
 import { h, fill, offsetsOf, mmss, clockOf, SPEAKER, reducedMotion, toast } from '../util.js';
 import { icon } from '../icons.js';
 import { REASON } from './bot.js';
+import { nextInQueue, reviewerName, setReviewerName } from '../worklist.js';
 
 const TYPE_LABEL = { binary: 'Да / Нет', scale: 'Шкала', flag: 'Флаг · без баллов' };
 const LANG = { RU: 'Русский', KZ: 'Қазақша', EN: 'English' };
@@ -22,7 +23,7 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
 
   try {
     const [dialog, checklist, list] = await Promise.all([api.getDialog(id), api.getActiveChecklist(), api.listDialogs()]);
-    Object.assign(S, { dialog, checklist, ids: list.map(d => d.conversation_id), offsets: offsetsOf(dialog.transcript) });
+    Object.assign(S, { dialog, checklist, rows: list, ids: list.map(d => d.conversation_id), offsets: offsetsOf(dialog.transcript) });
     S.active = checklist;
     [S.evaluation, S.handoff] = await Promise.all([api.getEvaluation(id), api.getDialogHandoff(id)]);
     if (S.evaluation) {
@@ -200,7 +201,7 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
     }
   }
 
-  // ---------- передача от бота оператору ----------
+  // ---------- bot handoff ----------
   function handoffBlock() {
     const x = S.handoff;
     if (!x?.escalated) return null;
@@ -213,6 +214,70 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
           x.bot_answer_index != null ? h('button', { class: 'cqa-link', onclick: () => jumpTo(x.bot_answer_index, { play: false }) }, x.bot_answer) : x.bot_answer)],
         x.bot_gap && [h('dt', null, 'Чего не хватило боту'), h('dd', null, x.bot_gap)],
         x.suggested_bot_answer && [h('dt', { class: 'is-new' }, 'Бот мог бы ответить'), h('dd', { class: 'is-new' }, x.suggested_bot_answer)]));
+  }
+
+  // ---------- review status ----------
+  async function markReviewed(goNext, by, note) {
+    if (by) setReviewerName(by);
+    try {
+      const ev = await api.markReviewed(S.evaluation.evaluation_id, { by: by || null, note: note || null });
+      S.evaluation.review = ev.review;
+      S.rows = await api.listDialogs();
+      toast('Отмечено как проверенное', { icon: icon('check', 16) });
+      const next = nextInQueue(S.rows, S.id);
+      if (goNext && next) { onNavigate(next); return; }
+      if (goNext) toast('Очередь пуста — всё проверено', { icon: icon('check', 16) });
+      rerender();
+    } catch (e) { toast(e.message, { icon: icon('alert', 16) }); }
+  }
+
+  async function unmarkReviewed() {
+    try {
+      const ev = await api.unmarkReviewed(S.evaluation.evaluation_id);
+      S.evaluation.review = ev.review;
+      S.rows = await api.listDialogs();
+      rerender();
+    } catch (e) { toast(e.message, { icon: icon('alert', 16) }); }
+  }
+
+  function reviewBlock() {
+    const ev = S.evaluation;
+    if (!ev || S.evaluating) return null;
+    const isReviewer = S.role === 'reviewer';
+    const open = S.appeals.filter(a => a.status === 'open').length;
+    const next = nextInQueue(S.rows || [], S.id);
+    const goNext = next && h('button', { class: 'cqa-btn cqa-btn--ghost cqa-btn--sm', onclick: () => onNavigate(next) }, 'Следующий в очереди', icon('arrowRight', 14));
+    const when = t => new Date(t).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' });
+
+    if (open) {
+      return h('div', { class: 'cqa-review is-appeal' },
+        h('div', { class: 'cqa-review-head' }, icon('gavel', 14), `Ждёт решения по апелляции · ${open}`),
+        h('span', null, isReviewer ? 'Решите апелляцию в критерии — после этого диалог закроется сам.' : 'Проверяющий рассмотрит апелляцию и пересчитает итог.'));
+    }
+    if (ev.review) {
+      return h('div', { class: 'cqa-review is-done' },
+        h('div', { class: 'cqa-review-head' }, icon('check', 14), 'Проверено'),
+        h('span', { class: 'cqa-review-meta' }, [ev.review.by || 'без имени', when(ev.review.reviewed_at)].join(' · ')),
+        ev.review.note && h('span', null, `«${ev.review.note}»`),
+        isReviewer && h('div', { class: 'cqa-review-actions' },
+          h('button', { class: 'cqa-btn cqa-btn--ghost cqa-btn--sm', onclick: unmarkReviewed }, icon('refresh', 14), 'Вернуть в работу'),
+          goNext));
+    }
+    if (!isReviewer) {
+      return h('div', { class: 'cqa-review' },
+        h('div', { class: 'cqa-review-head' }, icon('flag', 14), 'Ждёт проверки'),
+        h('span', { class: 'cqa-review-meta' }, 'Проверяющий ещё не смотрел эту оценку. Не согласны с критерием — оспорьте его.'));
+    }
+    const name = h('input', { class: 'cqa-input', placeholder: 'Ваше имя', value: reviewerName(), 'aria-label': 'Имя проверяющего' });
+    const note = h('input', { class: 'cqa-input', placeholder: 'Комментарий (необязательно)', 'aria-label': 'Комментарий' });
+    const go = n => markReviewed(n, name.value.trim(), note.value.trim());
+    return h('div', { class: 'cqa-review' },
+      h('div', { class: 'cqa-review-head' }, icon('flag', 14), 'Ждёт проверки'),
+      h('span', { class: 'cqa-review-meta' }, 'Согласны с оценкой — закройте диалог. Не согласны — оспорьте критерий.'),
+      !reviewerName() && name, note,
+      h('div', { class: 'cqa-review-actions' },
+        h('button', { class: 'cqa-btn cqa-btn--primary cqa-btn--sm', onclick: () => go(true) }, icon('check', 14), next ? 'Проверено → следующий' : 'Проверено'),
+        next && h('button', { class: 'cqa-btn cqa-btn--ghost cqa-btn--sm', onclick: () => go(false) }, 'Только отметить')));
   }
 
   // ---------- правая колонка: итог ----------
@@ -262,6 +327,8 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
         ? h('button', { class: 'cqa-gross', onclick: () => setPinned(fin.grossErrors[0]) }, icon('alert', 18),
             h('span', null, h('b', null, 'Грубая ошибка'), resultOf(fin.grossErrors[0])?.explanation))
         : h('div', { class: 'cqa-flag-ok' }, icon('check', 14), 'Грубых ошибок нет'),
+
+      reviewBlock(),
 
       ev.checklist_version !== S.active.version && h('div', { class: 'cqa-stale-box' },
         icon('layers', 16), h('span', null, `Оценено по чек-листу v${ev.checklist_version}. Активна v${S.active.version}: нажмите «Переоценить», чтобы применить новые критерии.`)),
@@ -468,6 +535,7 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
           h('dt', null, 'Исходно'), h('dd', null, answerText(c, r.answer)),
           h('dt', null, 'Решение'), h('dd', null, appeal.status === 'changed' ? `Изменить на «${answerText(c, appeal.decision.answer)}»` : 'Оставить без изменений'),
           h('dt', null, 'Причина'), h('dd', null, appeal.decision.reason),
+          appeal.decision.by && [h('dt', null, 'Решил'), h('dd', null, appeal.decision.by)],
           h('dt', null, 'Итог'), h('dd', null, h('b', null, answerText(c, appeal.status === 'changed' ? appeal.decision.answer : r.answer)))));
     }
     if (S.role !== 'reviewer') return h('div', { class: 'cqa-appeal' }, head, comment,
@@ -482,8 +550,13 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
     const submit = async action => {
       if (d.reason.trim().length < 3) { d.error = 'Укажите причину решения.'; renderCrits(); applyHighlights(); return; }
       const before = computeScore(S.checklist, finalAnswers()).total;
-      const upd = await api.decideAppeal(appeal.appeal_id, { action, answer: d.answer, reason: d.reason.trim() });
-      Object.assign(appeal, upd); delete S.decisions[appeal.appeal_id]; rerender();
+      const upd = await api.decideAppeal(appeal.appeal_id, { action, answer: d.answer, reason: d.reason.trim(), by: reviewerName() || null });
+      Object.assign(appeal, upd); delete S.decisions[appeal.appeal_id];
+      // The backend closes the dialog once its last appeal is decided.
+      const [fresh, rows] = await Promise.all([api.getEvaluation(S.id).catch(() => null), api.listDialogs().catch(() => S.rows)]);
+      if (fresh?.evaluation_id === S.evaluation.evaluation_id) S.evaluation.review = fresh.review;
+      S.rows = rows;
+      rerender();
       const after = computeScore(S.checklist, finalAnswers()).total;
       toast(action === 'change' ? `Итог пересчитан: ${fmt(before)} → ${fmt(after)}` : 'Оценка подтверждена', { icon: icon('check', 16) });
     };
@@ -526,21 +599,29 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
         const bubble = msgEls[k]?.querySelector('.cqa-bubble');
         if (!bubble) continue;
         const m = bubble.getBoundingClientRect(), c = from.getBoundingClientRect();
-        const my = m.top + Math.min(m.height / 2, 18);
-        const cy = c.top + Math.min(c.height / 2, 22);
-        if (my < box.top + 4 || my > box.bottom - 4 || cy < cbox.top || cy > cbox.bottom) continue;
-        const x1 = c.left - 4, x2 = m.right + 6;
+        // A message or chip scrolled out of view keeps its beam: the end sticks to the panel edge.
+        const clamp = (y, top, bottom, pad) => (y < top + pad ? [top + pad, -1] : y > bottom - pad ? [bottom - pad, 1] : [y, 0]);
+        const [my, off] = clamp(m.top + Math.min(m.height / 2, 18), box.top, box.bottom, 14);
+        const [cy, offC] = clamp(c.top + Math.min(c.height / 2, 22), cbox.top, cbox.bottom, 10);
+        const x1 = c.left - 4, x2 = Math.min(m.right, box.right - 8) + 6;
         const dx = Math.max(30, (x1 - x2) * 0.5);
-        paths.push({ d: `M${x1},${cy} C${x1 - dx},${cy} ${x2 + dx},${my} ${x2},${my}`, x1, y1: cy, x2, y2: my, len: Math.hypot(x1 - x2, cy - my) * 1.3 });
+        paths.push({ d: `M${x1},${cy} C${x1 - dx},${cy} ${x2 + dx},${my} ${x2},${my}`, x1, y1: cy, x2, y2: my, off, offC, len: Math.hypot(x1 - x2, cy - my) * 1.3 });
       }
       const key = cid + paths.length;
       const fresh = key !== lastKey; lastKey = key;
+      const dot = (x, y) => { const c = document.createElementNS(ns, 'circle'); c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 2.5); return c; };
+      const arrow = (x, y, dir) => {
+        const a = document.createElementNS(ns, 'path');
+        a.setAttribute('class', 'cqa-beam-arrow');
+        a.setAttribute('d', `M${x - 5},${y - dir * 2} L${x},${y + dir * 4} L${x + 5},${y - dir * 2}`);
+        return a;
+      };
       fill(g, paths.map(p => {
         const path = document.createElementNS(ns, 'path');
         path.setAttribute('d', p.d);
-        if (fresh && !reducedMotion()) { path.classList.add('is-new'); path.style.setProperty('--len', p.len); }
-        const dot = (x, y) => { const c = document.createElementNS(ns, 'circle'); c.setAttribute('cx', x); c.setAttribute('cy', y); c.setAttribute('r', 2.5); return c; };
-        return [path, dot(p.x1, p.y1), dot(p.x2, p.y2)];
+        if (p.off || p.offC) path.classList.add('is-off');
+        else if (fresh && !reducedMotion()) { path.classList.add('is-new'); path.style.setProperty('--len', p.len); }
+        return [path, p.offC ? arrow(p.x1, p.y1, p.offC) : dot(p.x1, p.y1), p.off ? arrow(p.x2, p.y2, p.off) : dot(p.x2, p.y2)];
       }));
     }
     const schedule = () => { if (!raf) raf = requestAnimationFrame(draw); };

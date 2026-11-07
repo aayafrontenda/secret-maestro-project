@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -13,7 +14,7 @@ from app.core.config import BACKEND_ROOT, Settings, get_settings
 from app.core.db import dispose_engine, get_session_factory
 from app.core.logging import setup_logging
 from app.core.migrations import run_migrations
-from app.ml import build_llm_chat, build_ml_client
+from app.ml import GatedMLClient, build_llm_chat, build_ml_client, ml_is_local
 from app.services import handoff
 from app.services.checklists import ensure_default_checklist
 from app.services.queue import EvaluationQueue
@@ -36,17 +37,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         async with session_factory() as session:
             if await handoff.backfill(session):
                 await session.commit()
-        app.state.ml = build_ml_client(settings)
+        app.state.llm_chat = build_llm_chat(settings)
+        ml = build_ml_client(settings)
+        # One local GPU cannot serve the evaluation model and handoff analysis at once
+        # (Ollama falls over): both go through the same lock.
+        gate = None
+        if ml_is_local(settings) and app.state.llm_chat and app.state.llm_chat.is_local:
+            gate = asyncio.Lock()
+            ml = GatedMLClient(ml, gate)
+        app.state.ml = ml
         app.state.queue = EvaluationQueue(
             session_factory, app.state.ml, workers=settings.queue_workers
         )
         await app.state.queue.start()
-        app.state.llm_chat = build_llm_chat(settings)
         app.state.handoff = handoff.HandoffAnalyzer(
             session_factory,
             app.state.llm_chat,
             mask=settings.pii_masking,
             language=settings.output_language,
+            concurrency=1 if app.state.llm_chat and app.state.llm_chat.is_local else 4,
+            gate=gate,
         )
         log.info(
             "%s started (ml=%s, workers=%d)",

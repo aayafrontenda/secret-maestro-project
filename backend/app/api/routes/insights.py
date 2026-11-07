@@ -17,11 +17,14 @@ async def attention(
     session: SessionDep,
     settings: SettingsDep,
     threshold: float | None = Query(default=None, ge=0, le=100),
+    include_reviewed: bool = Query(default=False, description="Also list already reviewed"),
 ):
     """Dialogs to review first: grave violations, failed runs, open appeals, low totals,
     verdicts corrected by the backend. Latest evaluation per dialog, highest priority first."""
     return await attention_queue(
-        session, settings.attention_score_threshold if threshold is None else threshold
+        session,
+        settings.attention_score_threshold if threshold is None else threshold,
+        include_reviewed=include_reviewed,
     )
 
 

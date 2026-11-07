@@ -4,18 +4,22 @@ import { CONFIG } from '../config.js';
 import { fmt } from '../scoring.js';
 import { h, fill, store, toast } from '../util.js';
 import { icon } from '../icons.js';
-import { pageLayout, pageHead, tabs, input, sideBlock, stat, emptyState, pickFile } from '../ui.js';
+import { pageLayout, pageHead, tabs, input, sideBlock, stat, emptyState, pickFile, segmented } from '../ui.js';
+import { REVIEW, needsAction, byPriority, nextInQueue, reviewerName, setReviewerName } from '../worklist.js';
 
 const LANG = { RU: 'RU', KZ: 'KZ', EN: 'EN' };
+const STATUSES = ['todo', 'appeal', 'to_review', 'reviewed', 'none', 'gross', 'stale', 'all'];
+const DEFAULT_F = { lang: 'all', channel: 'all', status: 'todo', q: '', sort: 'priority' };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export async function mountDialogs(root) {
   const S = {
     rows: [], active: null, error: null,
-    f: store('cqa.filters') || { lang: 'all', channel: 'all', status: 'all', q: '' },
+    f: { ...DEFAULT_F, ...(store('cqa.filters') || {}) },
     group: CONFIG.DEFAULT_GROUP_ID, importing: false,
     batch: null, // { total, done, failed, stop, label }
   };
+  if (!STATUSES.includes(S.f.status)) S.f.status = 'todo';
   const L = pageLayout();
   fill(root, L.el);
 
@@ -27,14 +31,20 @@ export async function mountDialogs(root) {
   }
 
   const stale = r => r.evaluation === 'done' && r.checklist_version !== S.active?.version;
-  const statusOf = r => r.appeals_open ? 'appeal' : r.evaluation === 'none' ? 'none' : stale(r) ? 'stale' : 'done';
+  const matchStatus = (r, st) =>
+    st === 'all' ? true
+      : st === 'todo' ? needsAction(r)
+        : st === 'gross' ? r.gross_error
+          : st === 'stale' ? stale(r)
+            : r.review_status === st;
   function filtered() {
     const q = S.f.q.trim().toLowerCase();
-    return S.rows.filter(r =>
+    const rows = S.rows.filter(r =>
       (S.f.lang === 'all' || r.language === S.f.lang) &&
       (S.f.channel === 'all' || r.channel === S.f.channel) &&
-      (S.f.status === 'all' || (S.f.status === 'gross' ? r.gross_error : statusOf(r) === S.f.status)) &&
+      matchStatus(r, S.f.status) &&
       (!q || r.conversation_id.toLowerCase().includes(q)));
+    return S.f.sort === 'priority' ? rows.sort(byPriority) : rows.sort((a, b) => a.conversation_id.localeCompare(b.conversation_id));
   }
   const setF = (k, v) => { S.f[k] = v; store('cqa.filters', S.f); renderMain(); renderSide(); };
 
@@ -49,13 +59,16 @@ export async function mountDialogs(root) {
         tabs([{ value: 'all', label: 'Все' }, ...['RU', 'KZ', 'EN'].map(l => ({ value: l, label: LANG[l], count: cnt(r => r.language === l) }))], S.f.lang, v => setF('lang', v), 'Язык'),
         tabs([{ value: 'all', label: 'Все каналы' }, { value: 'agent chat', label: 'Чаты', count: cnt(r => r.channel === 'agent chat') }, { value: 'voice call', label: 'Звонки', count: cnt(r => r.channel === 'voice call') }], S.f.channel, v => setF('channel', v), 'Канал'),
         tabs([
-          { value: 'all', label: 'Любой статус' },
-          { value: 'none', label: 'Не оценены', count: cnt(r => statusOf(r) === 'none') },
-          { value: 'done', label: 'Оценены', count: cnt(r => statusOf(r) === 'done') },
-          { value: 'stale', label: 'Старая версия', count: cnt(r => statusOf(r) === 'stale') },
-          { value: 'appeal', label: 'Апелляция', count: cnt(r => statusOf(r) === 'appeal') },
+          { value: 'todo', label: 'Мне проверить', count: cnt(needsAction) },
+          { value: 'appeal', label: 'Апелляции', count: cnt(r => r.review_status === 'appeal') },
+          { value: 'to_review', label: 'Ждут проверки', count: cnt(r => r.review_status === 'to_review') },
+          { value: 'reviewed', label: 'Проверены', count: cnt(r => r.review_status === 'reviewed') },
+          { value: 'none', label: 'Не оценены', count: cnt(r => r.review_status === 'none') },
           { value: 'gross', label: 'Грубые ошибки', count: cnt(r => r.gross_error) },
-        ].filter(o => o.value === 'all' || o.count > 0 || S.f.status === o.value), S.f.status, v => setF('status', v), 'Статус'),
+          { value: 'stale', label: 'Старая версия', count: cnt(stale) },
+          { value: 'all', label: 'Все', count: S.rows.length },
+        ].filter(o => ['todo', 'all'].includes(o.value) || o.count > 0 || S.f.status === o.value), S.f.status, v => setF('status', v), 'Статус проверки'),
+        segmented([{ value: 'priority', label: 'По приоритету', hint: 'Апелляции, грубые ошибки, затем низкий итог' }, { value: 'id', label: 'По ID' }], S.f.sort, v => setF('sort', v), 'Сортировка'),
         h('div', { class: 'cqa-search' }, icon('scan', 16),
           input({ placeholder: 'Поиск по ID', value: S.f.q, 'aria-label': 'Поиск по ID', oninput: e => { S.f.q = e.target.value; store('cqa.filters', S.f); renderTable(); renderSide(); } })),
       ),
@@ -75,11 +88,15 @@ export async function mountDialogs(root) {
         ['ID', 'Канал', 'Язык', 'Реплик', 'Итог', 'Статус'].map((t, i) => h('span', { role: 'columnheader', class: `cqa-td cqa-td--${i}` }, t)),
         h('span', { class: 'cqa-td cqa-td--go' })),
       rows.length === 0 && h('div', { class: 'cqa-table-empty' }, 'Под фильтры ничего не подходит. ',
-        h('button', { class: 'cqa-link', onclick: () => { S.f = { lang: 'all', channel: 'all', status: 'all', q: '' }; store('cqa.filters', S.f); renderMain(); renderSide(); } }, 'Сбросить фильтры')),
+        S.f.status === 'todo' && !S.f.q && S.f.lang === 'all' && S.f.channel === 'all'
+          ? 'Всё проверено: открытых апелляций и непроверенных оценок нет. '
+          : null,
+        h('button', { class: 'cqa-link', onclick: () => { S.f = { ...DEFAULT_F, status: 'all' }; store('cqa.filters', S.f); renderMain(); renderSide(); } }, 'Показать все диалоги')),
       rows.map(r => {
-        const st = statusOf(r);
+        const st = r.review_status;
+        const rv = REVIEW[st];
         const running = S.batch?.current?.has(r.conversation_id);
-        return h('a', { class: `cqa-tr ${running ? 'is-running' : ''}`, role: 'row', href: `#/dialogs/${encodeURIComponent(r.conversation_id)}` },
+        return h('a', { class: `cqa-tr ${running ? 'is-running' : ''} ${st === 'reviewed' ? 'is-done' : ''}`, role: 'row', href: `#/dialogs/${encodeURIComponent(r.conversation_id)}` },
           h('span', { class: 'cqa-td cqa-td--0 cqa-num' }, h('b', null, r.conversation_id)),
           h('span', { class: 'cqa-td cqa-td--1' }, icon(r.channel === 'voice call' ? 'headphones' : 'chat', 15), r.channel === 'voice call' ? 'Звонок' : 'Чат'),
           h('span', { class: 'cqa-td cqa-td--2' }, h('span', { class: 'cqa-lang' }, r.language)),
@@ -90,9 +107,13 @@ export async function mountDialogs(root) {
               : [h('b', { class: 'cqa-num' }, fmt(r.total)), h('span', { class: 'cqa-minibar' }, h('i', { style: { width: `${r.total}%` } }))]),
           h('span', { class: 'cqa-td cqa-td--5' },
             r.gross_error && h('span', { class: 'cqa-pill cqa-pill--red' }, icon('alert', 12), 'грубая'),
-            r.appeals_open > 0 && h('span', { class: 'cqa-pill cqa-pill--amber' }, icon('gavel', 12), r.appeals_open),
-            st === 'stale' && h('span', { class: 'cqa-pill' }, `v${r.checklist_version}`),
-            st === 'none' && !running && h('span', { class: 'cqa-muted' }, 'не оценён')),
+            st === 'none'
+              ? !running && h('span', { class: 'cqa-muted' }, 'не оценён')
+              : h('span', {
+                  class: `cqa-pill ${rv.pill}`,
+                  title: st === 'reviewed' ? [r.reviewed_by, r.reviewed_at && new Date(r.reviewed_at).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' })].filter(Boolean).join(' · ') : null,
+                }, rv.icon && icon(rv.icon, 12), st === 'appeal' ? `${rv.label} · ${r.appeals_open}` : rv.label),
+            stale(r) && h('span', { class: 'cqa-pill', title: `Оценено по v${r.checklist_version}, активна v${S.active?.version}` }, `v${r.checklist_version}`)),
           h('span', { class: 'cqa-td cqa-td--go' }, icon('chevronRight', 16)));
       }));
   }
@@ -109,7 +130,23 @@ export async function mountDialogs(root) {
 
     const groupInput = input({ value: S.group, 'aria-label': 'group_id', placeholder: 'group_id', oninput: e => { S.group = e.target.value; }, onkeydown: e => e.key === 'Enter' && doImport() });
 
+    const todo = S.rows.filter(needsAction);
+    const evaluated = S.rows.filter(r => r.review_status !== 'none');
+    const reviewed = S.rows.filter(r => r.review_status === 'reviewed');
+    const first = nextInQueue(S.rows, null);
+    const nameInput = input({ value: reviewerName(), placeholder: 'Ваше имя', 'aria-label': 'Имя проверяющего', onchange: e => setReviewerName(e.target.value) });
+
     fill(L.side, h('div', { class: 'cqa-side-inner' },
+      sideBlock('Моя очередь',
+        h('div', { class: 'cqa-stats' },
+          stat('Мне проверить', todo.length, `апелляций: ${todo.filter(r => r.review_status === 'appeal').length}`),
+          stat('Проверено', `${reviewed.length} / ${evaluated.length}`)),
+        evaluated.length > 0 && h('div', { class: 'cqa-progress-bar' }, h('i', { style: { width: `${(reviewed.length / evaluated.length) * 100}%` } })),
+        h('button', { class: 'cqa-btn cqa-btn--primary cqa-btn--block', disabled: !first, onclick: () => { location.hash = `#/dialogs/${encodeURIComponent(first)}`; } },
+          icon(first ? 'arrowRight' : 'check', 16), first ? 'Начать проверку' : 'Очередь пуста'),
+        h('p', { class: 'cqa-muted' }, 'Сначала апелляции, потом грубые ошибки, потом самые низкие баллы. В карточке нажмите «Проверено → следующий».'),
+        h('label', { class: 'cqa-label' }, 'Проверяющий'), nameInput),
+
       sideBlock('Данные',
         h('div', { class: 'cqa-inline' }, groupInput,
           h('button', { class: 'cqa-btn cqa-btn--outline cqa-btn--sm', disabled: S.importing, onclick: doImport }, icon(S.importing ? 'refresh' : 'arrowRight', 14, S.importing ? 'cqa-spin' : ''), 'Импорт')),

@@ -261,6 +261,21 @@ async def _mark_failed(session: AsyncSession, evaluation_id: int, error: str) ->
     await session.commit()
 
 
+# --- review -------------------------------------------------------------------------------------
+
+
+def mark_reviewed(ev: Evaluation, *, by: str | None = None, note: str | None = None) -> None:
+    ev.reviewed_at = _now()
+    ev.reviewed_by = (by or "").strip() or None
+    ev.review_note = (note or "").strip() or None
+
+
+def clear_review(ev: Evaluation) -> None:
+    ev.reviewed_at = None
+    ev.reviewed_by = None
+    ev.review_note = None
+
+
 # --- recalculation after appeals ----------------------------------------------------------------
 
 

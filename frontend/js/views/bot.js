@@ -1,4 +1,4 @@
-// Бот → оператор: на каких вопросах бот AIM передаёт клиента человеку и что ему добавить.
+// Bot -> operator handoffs: where AIM gives up and what it should learn.
 import { api } from '../api.js';
 import { fmt } from '../scoring.js';
 import { h, fill, mmss, toast } from '../util.js';

@@ -1,8 +1,8 @@
 from app.core.config import Settings
-from app.ml.base import MLClient, MLClientError
+from app.ml.base import GatedMLClient, MLClient, MLClientError
 from app.ml.http import HttpMLClient
 from app.ml.mock import MockMLClient
-from app.ml.openai import OpenAIChat, OpenAIMLClient
+from app.ml.openai import OpenAIChat, OpenAIMLClient, is_local_url
 
 
 def build_llm_chat(settings: Settings) -> OpenAIChat | None:
@@ -15,9 +15,19 @@ def build_llm_chat(settings: Settings) -> OpenAIChat | None:
         timeout_s=settings.openai_timeout_s,
         max_retries=settings.ml_max_retries,
         temperature=settings.openai_temperature,
+        reasoning_effort=settings.openai_reasoning_effort or None,
         price_input_per_1m=settings.openai_price_input_per_1m,
         price_output_per_1m=settings.openai_price_output_per_1m,
     )
+
+
+def ml_is_local(settings: Settings) -> bool:
+    """The evaluation model runs on this machine's GPU."""
+    if settings.ml_provider == "http":
+        return is_local_url(settings.ml_service_url)
+    if settings.ml_provider == "openai":
+        return is_local_url(settings.openai_base_url)
+    return False
 
 
 def build_ml_client(settings: Settings) -> MLClient:
@@ -40,6 +50,7 @@ def build_ml_client(settings: Settings) -> MLClient:
 
 
 __all__ = [
+    "GatedMLClient",
     "HttpMLClient",
     "MLClient",
     "MLClientError",
@@ -48,4 +59,5 @@ __all__ = [
     "OpenAIMLClient",
     "build_llm_chat",
     "build_ml_client",
+    "ml_is_local",
 ]

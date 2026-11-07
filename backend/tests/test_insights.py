@@ -227,3 +227,64 @@ async def test_reimport_keeps_llm_analysis_when_transcript_unchanged(
     await seeded.post(f"{API}/datasets/upload", json={"name": "DEV", "payload": dev_dataset})
     one = (await seeded.get(f"{API}/dialogs/p1-ru-001/handoff")).json()
     assert one["source"] == "llm" and one["bot_gap"] == "x"
+
+
+# --- review workflow ----------------------------------------------------------------------------
+
+
+async def _row(client: AsyncClient, dialog_id: str) -> dict:
+    rows = (await client.get(f"{API}/dialogs")).json()
+    return next(r for r in rows if r["conversation_id"] == dialog_id)
+
+
+async def test_review_workflow(seeded: AsyncClient):
+    _use(seeded, ScriptedML({"p1-ru-001": "grave"}))
+    assert (await _row(seeded, "p1-ru-001"))["review_status"] == "none"
+    ev = await _evaluate(seeded, "p1-ru-001")
+    assert (await _row(seeded, "p1-ru-001"))["review_status"] == "to_review"
+    assert ev["review"] is None
+
+    # An open appeal blocks closing the dialog.
+    a = (
+        await seeded.post(
+            f"{API}/appeals",
+            json={"evaluation_id": ev["evaluation_id"], "criterion_id": "c08", "comment": "No."},
+        )
+    ).json()
+    assert (await _row(seeded, "p1-ru-001"))["review_status"] == "appeal"
+    r = await seeded.post(f"{API}/evaluations/{ev['evaluation_id']}/review", json={"by": "Dana"})
+    assert r.status_code == 409 and "апелляции" in r.json()["error"]
+
+    # Deciding the last appeal recalculates and closes it, with the reviewer's name.
+    d = await seeded.post(
+        f"{API}/appeals/{a['appeal_id']}/decision",
+        json={"action": "change", "answer": "no", "reason": "Not a violation.", "by": "Dana"},
+    )
+    assert d.status_code == 200 and d.json()["decision"]["by"] == "Dana"
+    row = await _row(seeded, "p1-ru-001")
+    assert row["review_status"] == "reviewed" and row["reviewed_by"] == "Dana"
+    assert row["gross_error"] is False
+    full = (await seeded.get(f"{API}/evaluations/{ev['evaluation_id']}")).json()
+    assert full["review"]["by"] == "Dana" and full["final_gross_error"] is False
+
+    # Reopen, then close by hand; reviewed dialogs leave the attention queue.
+    r = await seeded.delete(f"{API}/evaluations/{ev['evaluation_id']}/review")
+    assert r.json()["review"] is None
+    assert (await _row(seeded, "p1-ru-001"))["review_status"] == "to_review"
+    _use(seeded, ScriptedML({"p1-ru-002": "bad"}))
+    bad = await _evaluate(seeded, "p1-ru-002")
+    ids = [i["conversation_id"] for i in (await seeded.get(f"{API}/attention")).json()["items"]]
+    assert "p1-ru-002" in ids
+    r = await seeded.post(
+        f"{API}/evaluations/{bad['evaluation_id']}/review", json={"by": "Dana", "note": "Coached."}
+    )
+    assert r.status_code == 200 and r.json()["review"]["note"] == "Coached."
+    data = (await seeded.get(f"{API}/attention")).json()
+    assert "p1-ru-002" not in [i["conversation_id"] for i in data["items"]]
+    data = (await seeded.get(f"{API}/attention", params={"include_reviewed": True})).json()
+    item = next(i for i in data["items"] if i["conversation_id"] == "p1-ru-002")
+    assert item["reviewed_by"] == "Dana"
+
+    # A re-evaluation starts unreviewed.
+    await _evaluate(seeded, "p1-ru-002")
+    assert (await _row(seeded, "p1-ru-002"))["review_status"] == "to_review"

@@ -34,6 +34,22 @@ def dialog_record(d: Dialog) -> dict[str, Any]:
     }
 
 
+def review_status(ev: Evaluation | None, appeals_open: int = 0) -> str:
+    """none: not evaluated; appeal: waits for a reviewer's decision; reviewed: closed;
+    to_review: evaluated, nobody has checked it yet."""
+    if ev is None:
+        return "none"
+    if appeals_open:
+        return "appeal"
+    return "reviewed" if ev.reviewed_at else "to_review"
+
+
+def review(ev: Evaluation) -> dict[str, Any] | None:
+    if not ev.reviewed_at:
+        return None
+    return {"reviewed_at": iso(ev.reviewed_at), "by": ev.reviewed_by, "note": ev.review_note}
+
+
 def dialog_row(
     d: Dialog, ev: Evaluation | None, appeals_open: int = 0, appeals_total: int = 0
 ) -> dict[str, Any]:
@@ -50,6 +66,9 @@ def dialog_row(
         "evaluated_at": iso(ev.completed_at) if ev else None,
         "appeals_open": appeals_open,
         "appeals_total": appeals_total,
+        "review_status": review_status(ev, appeals_open),
+        "reviewed_at": iso(ev.reviewed_at) if ev else None,
+        "reviewed_by": ev.reviewed_by if ev else None,
     }
 
 
@@ -110,6 +129,7 @@ def evaluation(ev: Evaluation) -> dict[str, Any]:
         "gross_error": ev.grave_error,
         "final_gross_error": ev.final_grave_error,
         "sections": ev.final_sections,
+        "review": review(ev),
     }
 
 
@@ -126,6 +146,7 @@ def evaluation_brief(ev: Evaluation) -> dict[str, Any]:
         "gross_error": ev.final_grave_error,
         "created_at": iso(ev.created_at),
         "completed_at": iso(ev.completed_at),
+        "reviewed_at": iso(ev.reviewed_at),
     }
 
 
@@ -147,6 +168,7 @@ def appeal(a: Appeal) -> dict[str, Any]:
                 "answer": a.new_answer,
                 "reason": a.decision_reason,
                 "decided_at": iso(a.decided_at),
+                "by": a.decided_by,
             }
             if decided
             else None

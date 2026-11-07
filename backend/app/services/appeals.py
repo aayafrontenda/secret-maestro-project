@@ -111,5 +111,16 @@ async def decide_appeal(session: AsyncSession, appeal: Appeal, decision: AppealD
 
     appeal.decision_reason = decision.reason
     appeal.decided_at = datetime.now(UTC)
+    appeal.decided_by = decision.by
     await session.flush()
+
+    # Deciding the last open appeal closes the dialog for the reviewer.
+    still_open = await session.scalar(
+        select(func.count())
+        .select_from(Appeal)
+        .where(Appeal.evaluation_id == evaluation.id, Appeal.status == AppealStatus.pending)
+    )
+    if not still_open and evaluation.reviewed_at is None:
+        evaluation_service.mark_reviewed(evaluation, by=decision.by)
+        await session.flush()
     return await get_appeal(session, appeal.id)  # type: ignore[return-value]

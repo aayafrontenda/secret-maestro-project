@@ -63,6 +63,11 @@ class Evaluation(TimestampMixin, Base):
     started_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
 
+    # A supervisor looked at the verdict and closed it (also set when the last appeal is decided).
+    reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    reviewed_by: Mapped[str | None] = mapped_column(String(100))
+    review_note: Mapped[str | None] = mapped_column(Text)
+
     dialog: Mapped["Dialog"] = relationship(back_populates="evaluations")
     checklist: Mapped["Checklist | None"] = relationship(back_populates="evaluations")
     results: Mapped[list["CriterionResult"]] = relationship(

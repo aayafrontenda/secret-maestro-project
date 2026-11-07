@@ -73,6 +73,9 @@ export const mockApi = {
         evaluated_at: ev?.created_at ?? null,
         appeals_open: mine.filter(a => a.status === 'open').length,
         appeals_total: mine.length,
+        review_status: !ev ? 'none' : mine.some(a => a.status === 'open') ? 'appeal' : ev.review ? 'reviewed' : 'to_review',
+        reviewed_at: ev?.review?.reviewed_at ?? null,
+        reviewed_by: ev?.review?.by ?? null,
       };
     });
   },
@@ -171,18 +174,43 @@ export const mockApi = {
     return a;
   },
 
-  async decideAppeal(appeal_id, { action, answer, reason }) {
+  async decideAppeal(appeal_id, { action, answer, reason, by = null }) {
     const all = store('cqa.appeals') || [];
     const a = all.find(x => x.appeal_id === appeal_id);
     if (!a) throw new Error('Апелляция не найдена');
     a.status = action === 'change' ? 'changed' : 'confirmed';
-    a.decision = { action, answer: action === 'change' ? answer : null, reason, decided_at: new Date().toISOString() };
+    a.decision = { action, answer: action === 'change' ? answer : null, reason, by, decided_at: new Date().toISOString() };
     store('cqa.appeals', all);
+    // Deciding the last open appeal closes the dialog.
+    const ev = store(`cqa.eval.${a.conversation_id}`);
+    if (ev && !ev.review && !all.some(x => x.evaluation_id === a.evaluation_id && x.status === 'open')) {
+      ev.review = { reviewed_at: new Date().toISOString(), by, note: null };
+      store(`cqa.eval.${a.conversation_id}`, ev);
+    }
     await sleep(250);
     return a;
   },
 
-  // ---------- аналитика бэкенда (в моках недоступна) ----------
+  async markReviewed(evaluation_id, { by = null, note = null } = {}) {
+    const key = Object.keys(localStorage).find(k => k.startsWith('cqa.eval.') && store(k)?.evaluation_id === evaluation_id);
+    const ev = key && store(key);
+    if (!ev) throw new Error('Оценка не найдена');
+    if ((store('cqa.appeals') || []).some(a => a.evaluation_id === evaluation_id && a.status === 'open')) throw new Error('Есть открытые апелляции: сначала примите по ним решение');
+    ev.review = { reviewed_at: new Date().toISOString(), by, note };
+    store(key, ev);
+    return ev;
+  },
+
+  async unmarkReviewed(evaluation_id) {
+    const key = Object.keys(localStorage).find(k => k.startsWith('cqa.eval.') && store(k)?.evaluation_id === evaluation_id);
+    const ev = key && store(key);
+    if (!ev) throw new Error('Оценка не найдена');
+    ev.review = null;
+    store(key, ev);
+    return ev;
+  },
+
+  // ---------- backend-only analytics ----------
   async getAttention() { return { threshold: 60, counts: { total: 0 }, items: [], mock: true }; },
   async getHandoffs() { throw new Error('Раздел работает только с бэкендом (USE_MOCKS: false)'); },
   async analyzeHandoffs() { throw new Error('Раздел работает только с бэкендом'); },
