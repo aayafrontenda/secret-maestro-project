@@ -163,8 +163,9 @@ PROBES: dict[str, Probe] = {
             "or concern the client raised in the chat? For each one, any of these counts: acknowledging the client's "
             "concern ('I understand why you are worried', 'Понимаю, что вы переживаете'), apologising, or giving an "
             "explanation or steps aimed at that specific problem. Answer false if the operator ignored or brushed off "
-            "ANY of the client's complaints or repeated questions, or replied with nothing but a generic phrase such "
-            "as 'thank you for contacting us'.",
+            "ANY of the client's complaints, or replied with nothing but a generic phrase such "
+            "as 'thank you for contacting us'. An unanswered question that is not a complaint is about the "
+            "completeness of the answer, not about empathy: do NOT count it here.",
             cite="operator",
         ),
         # 06 Dialogue management: facts; the level is set by code (rules.c06)

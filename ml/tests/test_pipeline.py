@@ -191,3 +191,16 @@ def test_dialogue_probes_do_not_see_the_exchange_with_the_bot():
     ])
     ctx = Context(transcript=chat, facts=extract_facts(chat), llm=FakeLLM(GOOD))
     assert [m.role.value for m in ctx.shown("since_operator")] == ["operator", "client"]
+
+
+def test_a_clarification_must_be_an_operator_question():
+    opening = [
+        {"role": "client", "text": "Не могу войти."},
+        {"role": "operator", "text": "Здравствуйте, я Антон. Переустановите приложение."},
+        {"role": "client", "text": "Я на компьютере."},
+    ]
+    base = {**GOOD, "enough_info_from_start": False, "used_known_details": ("M2", True), "clarified_missing": ("M2", True)}
+    guess = score_transcript(_chat([*opening, {"role": "operator", "text": "Ну, тогда сайт."}]), FakeLLM(base))
+    asked = score_transcript(_chat([*opening, {"role": "operator", "text": "Укажите, пожалуйста, адрес сайта."}]), FakeLLM(base))
+    assert {c.criterion_id: c.answer for c in guess.criteria}["02"] == "no"
+    assert {c.criterion_id: c.answer for c in asked.criteria}["02"] == "yes"

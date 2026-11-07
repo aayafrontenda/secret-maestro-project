@@ -1,0 +1,236 @@
+{
+ "about": "Held-out labels for 15 DEV dialogs not in dev_reference.json, made with Gemini (Pro) from the checklist PDF and docs/HELDOUT_LABELING_PROMPT.md. Reviewed by Claude without seeing pipeline outputs: 3 dialogs changed (p1-ru-002, p1-ru-017, p1-en-007); still needs a human pass on 'uncertain'.",
+ "labels": [
+  {
+   "conversation_id": "p1-ru-002",
+   "expected": {
+    "c1": "yes",
+    "c2": "yes",
+    "c3": "yes",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "yes",
+    "c8": "no"
+   },
+   "notes": "Reviewed (Gemini copied the format example here). c2 yes: the operator asked where the tariffs were compared, nothing known was asked again. c3 yes: an account-specific question; the operator asked for verification and disclosed nothing, the client declined. c7 yes: next step, offer to write again and goodbye.",
+   "uncertain": [
+    "c3"
+   ]
+  },
+  {
+   "conversation_id": "p1-ru-005",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 15,
+    "c5": "yes",
+    "c6": 4,
+    "c7": "yes",
+    "c8": "no"
+   },
+   "notes": "Operator's initial navigation instruction was unclear, causing the client to re-ask (c6=4).",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-010",
+   "expected": {
+    "c1": "yes",
+    "c2": "yes",
+    "c3": "yes",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "yes",
+    "c8": "no"
+   },
+   "notes": "Clear ID verification and proper closure.",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-013",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "Missing a clear summary or next step in closing.",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-017",
+   "expected": {
+    "c1": "yes",
+    "c2": "no",
+    "c3": "na",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 7,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "Operator asked about the ticker immediately after the client explicitly stated they were going to find the ticker (c2=no). Reviewed c6 10->7: asking again for what the client had said is one noticeable lapse.",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-ru-021",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "No summary or next step in closure.",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-001",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "No summary or next step in closure.",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-005",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 15,
+    "c5": "yes",
+    "c6": 4,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "Operator gave an incomplete path initially, client had to re-ask (c6=4). Chat ended without goodbye (c7=no).",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-007",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "No summary or next step in closure.",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-kz-010",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "No summary or next step in closure.",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-002",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "No summary or next step in closure.",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-004",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "No summary or next step in closure.",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p1-en-007",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 10,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "Operator completely ignored the client's second question 'when can I retry?' (c4=10, c6=7). Reviewed c6 7->10: a missed question is completeness (c4), not clarity.",
+   "uncertain": [
+    "c6"
+   ]
+  },
+  {
+   "conversation_id": "p1-en-010",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "No summary or next step in closure.",
+   "uncertain": []
+  },
+  {
+   "conversation_id": "p4-ru-003",
+   "expected": {
+    "c1": "yes",
+    "c2": "yes",
+    "c3": "yes",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "na",
+    "c8": "no"
+   },
+   "notes": "Client hung up the phone immediately after operator voiced the next step, leaving no time for goodbye, therefore c7 is N/A.",
+   "uncertain": [
+    "c7"
+   ]
+  }
+ ]
+}

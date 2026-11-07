@@ -39,6 +39,12 @@ OPERATOR_REQUEST = re.compile(
     r"(оператор|человек|специалист|сотрудник|маман|адам|\bagent\b|\bhuman\b|representative|\boperator\b)",
     re.IGNORECASE,
 )
+# An operator asking for details: a question or a request to tell something.
+CLARIFYING = re.compile(
+    r"(\?|уточн\w*|укаж\w*|напиш\w*|подскаж\w*|сообщ\w*|назов\w*|пришл\w*|нақтыла\w*|айтыңыз|жазыңыз|"
+    r"көрсетіңіз|\bspecify\b|\btell me\b|\blet me know\b|\bplease (send|share|confirm)\b)",
+    re.IGNORECASE,
+)
 GOODBYE = re.compile(
     r"(до свидания|всего (доброго|хорошего)|хорошего (дня|вечера)|сау болыңыз|сау бол\b|қош болыңыз|"
     r"\bgoodbye\b|\bbye\b|have a (nice|good|great) (day|evening))",
@@ -106,8 +112,13 @@ def c02(ctx: Context) -> Decision:
     if enough.value:
         return Decision("na", {"enough_info_from_start": True, "used_known_details": True}, "na_02", _cited(enough))
     clarified = ctx.ask("clarified_missing")
-    facts = {"enough_info_from_start": False, "used_known_details": True, "clarified_missing": clarified.value}
-    answer = clarified.value
+    asked = clarified.value
+    if asked and "call" not in ctx.channel.lower():
+        # A clarification needs an operator question or request for details somewhere in the chat; a guess
+        # ("Переустановите приложение") is not one. Speech transcripts may lack question marks, so calls are trusted.
+        asked = any(m.role is Role.OPERATOR and CLARIFYING.search(m.text) for m in ctx.transcript.messages)
+    facts = {"enough_info_from_start": False, "used_known_details": True, "clarified_missing": asked}
+    answer = asked
     return Decision(
         _yes_no(answer), facts, evidence=_cited(known, clarified), expected_at=None if answer else _first_operator(ctx)
     )
