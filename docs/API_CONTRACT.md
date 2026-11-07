@@ -72,6 +72,29 @@
 ### `GET /api/checklists/active/versions` → `[{ version, name, updated_at, criteria }]` (criteria — число критериев)
 ### `PUT /api/checklists/active` — сохранить: тело = чек-лист целиком, бэк создаёт **новую версию** (`version + 1`, `updated_at`) и возвращает её
 ### `POST /api/checklists/active/reset` — новая версия из исходного чек-листа (PDF), возвращает её
+### `POST /api/checklists/active/simulate` — проверить черновик на оценённых диалогах, ничего не сохраняя
+
+Тело: `{ "document": <чек-лист целиком>, "limit": 10 }` (limit ≤ 30). Бэк берёт последние завершённые оценки
+(сначала те, где по изменённым критериям есть решения по апелляциям), отправляет в модель **только изменённые
+критерии** (название, правило, тип, шкала, N/A; новые критерии; все — если поменялись общие правила), остальные
+ответы переиспользует и пересчитывает итог по новым весам. Изменились только веса — модель не вызывается.
+
+```json
+{
+  "changed_criteria": [{ "criterion_id": "c01", "criterion_name": "…", "reason": "edited", "fields": ["rule"] }],
+  "sample": 10, "dialogs_changed": 3, "score_changed": 4, "avg_delta": -2.5, "failed": 0,
+  "criteria": [{ "criterion_id": "c01", "evaluated": 10, "changed": 3,
+                 "human_decided": 2, "agree_before": 0, "agree_after": 2 }],
+  "dialogs": [{ "conversation_id": "p1-ru-001", "old_total": 84.6, "new_total": 100,
+                "changes": [{ "criterion_id": "c01", "old_answer": "no", "new_answer": "yes",
+                              "model_answer": "yes", "human_answer": "no", "changed": true, "explanation": "…" }] }],
+  "model": { "provider": "openai", "name": "gpt-4.1-mini" }, "usage": { "cost_usd": 0.01 }, "duration_ms": 41000
+}
+```
+
+`old_answer` — текущий итоговый ответ (с учётом апелляций), `model_answer` — исходный ответ модели,
+`human_answer` — решение проверяющего, если апелляция по этому критерию решена. `agree_before/after` —
+сколько раз модель совпала с проверяющими до и после правки. 422 — черновик не проходит проверку.
 
 Валидация (фронт проверяет, бэку стоит повторить): сумма `weight` у не-`flag` критериев = 100, у scale ≥ 2 уникальных ступеней,
 при `na_allowed` заполнено `na_condition`, у каждого критерия есть `name` и `description`.

@@ -663,3 +663,20 @@ a.cqa-tr.is-done .cqa-td--0 b { color: var(--cqa-ink-2); font-weight: 600; }
 /* Interface language */
 .cqa-lang-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 30px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--cqa-line); background: var(--cqa-bg); color: var(--cqa-ink-2); font-size: 12px; font-weight: 600; cursor: pointer; }
 .cqa-lang-btn:hover { color: var(--cqa-ink); border-color: var(--cqa-line-2); }
+
+/* Checklist draft dry run */
+.cqa-sim .cqa-stats { margin-bottom: 10px; }
+.cqa-sim.is-stale > :not(h2):not(.cqa-sim-stale) { opacity: .55; }
+.cqa-sim-stale { display: flex; gap: 6px; align-items: center; margin: 0 0 8px; font-size: 12px; color: var(--cqa-amber-ink); }
+.cqa-sim-crit, .cqa-sim-dialogs { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.cqa-sim-crit li { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; font-size: 13px; line-height: 1.4; }
+.cqa-sim-crit li b { font-weight: 600; }
+.cqa-sim-crit li > span:nth-of-type(n+2) { flex-basis: 100%; font-size: 12px; }
+.cqa-sim-agree { font-size: 12px; }
+.cqa-sim-dialogs li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; font-size: 13px; padding-top: 8px; border-top: 1px solid var(--cqa-line); }
+.cqa-sim-dialogs li em { font-style: normal; font-weight: 600; }
+.cqa-sim-change { grid-column: 1 / -1; font-size: 12px; color: var(--cqa-ink-2); }
+.cqa-sim-note { font-size: 12px; margin: 0; }
+.cqa-sim-link { color: var(--cqa-ink); font-weight: 600; text-decoration: none; }
+.cqa-sim-link:hover { text-decoration: underline; }
+.cqa-sim-change b { font-weight: 600; }

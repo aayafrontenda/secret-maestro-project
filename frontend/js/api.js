@@ -99,6 +99,8 @@ const httpApi = {
   listChecklistVersions: () => req('/checklists/active/versions'),
   saveChecklist: cl => req('/checklists/active', { method: 'PUT', body: cl }),
   resetChecklist: () => req('/checklists/active/reset', { method: 'POST' }),
+  // Dry run of a draft on evaluated dialogs; nothing is saved.
+  simulateChecklist: (document, limit = 10) => req('/checklists/active/simulate', { method: 'POST', body: { document, limit } }),
 
   // 404 = оценки ещё нет; остальные ошибки (бэк недоступен) пробрасываем, чтобы не запускать оценку зря.
   getEvaluation: id => req(`/dialogs/${enc(id)}/evaluation`).then(normEvaluation)

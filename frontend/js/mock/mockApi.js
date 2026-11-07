@@ -123,6 +123,82 @@ export const mockApi = {
     return clone(next);
   },
 
+  // Dry run of a draft: the same response shape as the backend's /checklists/active/simulate.
+  async simulateChecklist(draft, limit = 10) {
+    const t0 = performance.now();
+    const active = await this.getActiveChecklist();
+    const appeals = store('cqa.appeals') || [];
+    const view = c => JSON.stringify([c.name.trim(), (c.description || '').trim(), c.type, c.na_allowed ? (c.na_condition || '').trim() : null,
+      c.type === 'scale' ? [...(c.scale || [])].map(s => [Number(s.value), (s.label || '').trim()]).sort((a, b) => b[0] - a[0]) : null]);
+    const notes = cl => JSON.stringify(cl.rules?.notes || []);
+    const guidelinesChanged = notes(draft) !== notes(active);
+    const old = Object.fromEntries(active.criteria.map(c => [c.id, c]));
+    const changed = draft.criteria.flatMap(c => {
+      const p = old[c.id];
+      if (!p) return [{ criterion_id: c.id, criterion_name: c.name, reason: 'new', fields: [] }];
+      if (view(p) !== view(c)) return [{ criterion_id: c.id, criterion_name: c.name, reason: 'edited', fields: [] }];
+      return guidelinesChanged ? [{ criterion_id: c.id, criterion_name: c.name, reason: 'guidelines', fields: [] }] : [];
+    });
+    const codes = new Set(changed.map(c => c.criterion_id));
+    const human = (ev, id) => {
+      const a = appeals.find(x => x.evaluation_id === ev.evaluation_id && x.criterion_id === id && x.status !== 'open');
+      if (!a) return null;
+      return a.status === 'changed' ? a.decision.answer : ev.results.find(r => r.criterion_id === id)?.answer ?? null;
+    };
+    const evals = Object.keys(localStorage).filter(k => k.startsWith('cqa.eval.')).map(k => store(k)).filter(Boolean);
+    const decided = ev => [...codes].filter(id => human(ev, id) != null).length;
+    const sample = evals.sort((a, b) => decided(b) - decided(a) || String(b.created_at).localeCompare(String(a.created_at))).slice(0, limit);
+    const hash = s => { let x = 0; for (const ch of s) x = (x * 31 + ch.charCodeAt(0)) | 0; return Math.abs(x); };
+    await sleep(900 + 120 * sample.length);
+
+    const dialogs = [];
+    for (const ev of sample) {
+      const d = await this.getDialog(ev.conversation_id);
+      const was = finalAnswersOf(ev, appeals);
+      const need = draft.criteria.filter(c => codes.has(c.id) || was[c.id] == null);
+      const fresh = Object.fromEntries(mockEvaluate(d, { ...draft, criteria: need }).map(r => [r.criterion_id, r]));
+      const changes = need.map(c => {
+        let answer = fresh[c.id].answer;
+        // The regex mock ignores wording; flip some answers so a reworded criterion visibly moves.
+        if (old[c.id] && c.type !== 'flag' && hash(c.id + (c.description || '') + ev.conversation_id) % 4 === 0) {
+          const steps = c.type === 'scale' ? c.scale.map(s => s.value).sort((a, b) => b - a) : null;
+          answer = steps ? (steps.find(v => v !== answer) ?? answer) : answer === 'yes' ? 'no' : answer === 'no' ? 'yes' : answer;
+        }
+        const h = human(ev, c.id);
+        return {
+          criterion_id: c.id, criterion_name: c.name, old_answer: was[c.id] ?? null, new_answer: answer,
+          model_answer: ev.results.find(r => r.criterion_id === c.id)?.answer ?? null, human_answer: h,
+          changed: was[c.id] == null || String(was[c.id]) !== String(answer), explanation: fresh[c.id].explanation || '',
+        };
+      });
+      const answers = { ...was };
+      for (const ch of changes) answers[ch.criterion_id] = ch.new_answer;
+      dialogs.push({
+        conversation_id: ev.conversation_id, evaluation_id: ev.evaluation_id, language: d.language,
+        old_total: computeScore(ev.checklist || active, was).total, new_total: computeScore(draft, answers).total,
+        grave_error: computeScore(draft, answers).grossErrors.length > 0, changes,
+      });
+    }
+    const criteria = changed.map(c => {
+      const all = dialogs.flatMap(d => d.changes.filter(x => x.criterion_id === c.criterion_id));
+      const dec = all.filter(x => x.human_answer != null);
+      return {
+        ...c, evaluated: all.length, changed: all.filter(x => x.changed).length, human_decided: dec.length,
+        agree_before: dec.filter(x => String(x.model_answer) === String(x.human_answer)).length,
+        agree_after: dec.filter(x => String(x.new_answer) === String(x.human_answer)).length,
+      };
+    });
+    const deltas = dialogs.filter(d => d.old_total != null && d.new_total != null).map(d => d.new_total - d.old_total);
+    return {
+      checklist_version: active.version, changed_criteria: changed, guidelines_changed: guidelinesChanged, sample: dialogs.length,
+      dialogs_changed: dialogs.filter(d => d.changes.some(x => x.changed)).length,
+      score_changed: deltas.filter(x => Math.abs(x) >= 0.005).length,
+      avg_delta: deltas.length ? Math.round((deltas.reduce((a, b) => a + b, 0) / deltas.length) * 100) / 100 : null,
+      criteria, dialogs, failed: 0, model: { provider: 'mock', name: 'mock-heuristic' },
+      usage: { prompt_tokens: 0, completion_tokens: 0, cost_usd: 0 }, duration_ms: Math.round(performance.now() - t0),
+    };
+  },
+
   // ---------- оценка ----------
   async getEvaluation(id) {
     return store(`cqa.eval.${id}`);

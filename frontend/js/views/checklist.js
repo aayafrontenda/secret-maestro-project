@@ -15,7 +15,7 @@ const clone = x => JSON.parse(JSON.stringify(x));
 const nid = p => `${p}${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 
 export async function mountChecklist(root) {
-  const S = { saved: null, draft: null, versions: [], open: null, saving: false, showErrors: false };
+  const S = { saved: null, draft: null, versions: [], open: null, saving: false, showErrors: false, sim: null, simFor: null, simulating: false };
   const L = pageLayout();
   fill(root, L.el);
   fill(L.main, h('div', { class: 'cqa-loading' }, icon('refresh', 16, 'cqa-spin'), 'Загружаем чек-лист…'));
@@ -165,7 +165,12 @@ export async function mountChecklist(root) {
         icon('refresh', 16), S.open && scored.some(c => c.id === S.open) ? 'Распределить остальные до 100' : 'Распределить до 100'),
       h('button', { class: 'cqa-btn cqa-btn--primary cqa-btn--block', disabled: S.saving || !isDirty, onclick: save },
         icon(S.saving ? 'refresh' : 'check', 16, S.saving ? 'cqa-spin' : ''), isDirty ? `Сохранить как v${S.versions[S.versions.length - 1]?.version + 1}` : 'Изменений нет'),
-      isDirty && h('button', { class: 'cqa-btn cqa-btn--ghost cqa-btn--sm cqa-btn--left', onclick: () => { S.draft = clone(S.saved); S.showErrors = false; S.open = null; renderMain(); renderSide(); } }, icon('x', 14), 'Отменить изменения'),
+      isDirty && h('button', { class: 'cqa-btn cqa-btn--ghost cqa-btn--sm cqa-btn--left', onclick: () => { S.draft = clone(S.saved); S.showErrors = false; S.open = null; S.sim = null; renderMain(); renderSide(); } }, icon('x', 14), 'Отменить изменения'),
+      isDirty && h('button', {
+        class: 'cqa-btn cqa-btn--outline cqa-btn--block', id: 'cqa-sim-run', disabled: S.simulating, onclick: simulate,
+        title: 'Прогнать черновик на уже оценённых диалогах и сравнить с текущими оценками и решениями проверяющих. Ничего не сохраняется.',
+      }, icon(S.simulating ? 'refresh' : 'scan', 16, S.simulating ? 'cqa-spin' : ''), S.simulating ? 'Проверяем…' : 'Проверить на диалогах'),
+      simPanel(),
 
       S.showErrors && E.length > 0 && h('div', { class: 'cqa-errbox', role: 'alert' },
         h('b', null, icon('alert', 14), `Исправьте ${E.length} ${E.length === 1 ? 'ошибку' : 'ошибки'}`),
@@ -189,6 +194,75 @@ export async function mountChecklist(root) {
           h('span', null, v.updated_at ? new Date(v.updated_at).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : 'исходный'),
           h('span', { class: 'cqa-muted cqa-num' }, `${v.criteria} крит.`))))),
     ));
+  }
+
+  // ---------- dry run of the draft ----------
+  async function simulate() {
+    S.showErrors = true;
+    if (errs().length) { renderMain(); renderSide(); toast('Сначала исправьте ошибки в черновике', { icon: icon('alert', 16) }); return; }
+    S.simulating = true; renderSide();
+    const snap = JSON.stringify(S.draft);
+    try {
+      S.sim = await api.simulateChecklist(clone(S.draft), 10);
+      S.simFor = snap;
+    } catch (e) { toast(`Проверка не прошла: ${e.message}`, { icon: icon('alert', 16) }); }
+    S.simulating = false; renderSide();
+  }
+
+  const answerLabel = (id, a) => {
+    if (a == null) return '—';
+    if (a === 'yes') return 'Да';
+    if (a === 'no') return 'Нет';
+    if (a === 'na') return 'N/A';
+    const c = S.draft.criteria.find(x => x.id === id);
+    return c?.type === 'scale' ? `${a} / ${Math.max(...c.scale.map(s => Number(s.value) || 0))}` : String(a);
+  };
+  const REASON = { new: 'новый', edited: 'изменён', guidelines: 'общие правила' };
+
+  function simPanel() {
+    const r = S.sim;
+    if (!r) return null;
+    const stale = S.simFor !== JSON.stringify(S.draft);
+    const delta = r.avg_delta;
+    const moved = r.dialogs.filter(d => !d.error && (d.changes.some(x => x.changed) || Math.abs((d.new_total ?? 0) - (d.old_total ?? 0)) >= 0.005));
+    return h('section', { class: `cqa-side-block cqa-sim ${stale ? 'is-stale' : ''}`, id: 'cqa-sim' },
+      h('h2', null, 'Проверка черновика'),
+      stale && h('p', { class: 'cqa-sim-stale' }, icon('alert', 12), 'Черновик изменился после проверки. Запустите её снова.'),
+      r.sample === 0
+        ? h('p', { class: 'cqa-muted' }, 'Нет оценённых диалогов. Оцените несколько на странице «Диалоги» и повторите.')
+        : [
+            h('div', { class: 'cqa-stats' },
+              h('div', { class: 'cqa-stat' }, h('span', { class: 'cqa-stat-label' }, 'Диалогов'), h('b', { class: 'cqa-num' }, r.sample)),
+              h('div', { class: 'cqa-stat' }, h('span', { class: 'cqa-stat-label' }, 'Ответ изменился'), h('b', { class: 'cqa-num' }, r.dialogs_changed)),
+              h('div', { class: 'cqa-stat' }, h('span', { class: 'cqa-stat-label' }, 'Итог изменился'), h('b', { class: 'cqa-num' }, r.score_changed)),
+              h('div', { class: 'cqa-stat' }, h('span', { class: 'cqa-stat-label' }, 'Средний итог'),
+                h('b', { class: `cqa-num ${delta > 0 ? 'cqa-ok' : delta < 0 ? 'cqa-bad' : ''}` }, delta == null ? '—' : `${delta > 0 ? '+' : ''}${fmt(delta, 1)}`))),
+            r.changed_criteria.length === 0
+              ? h('p', { class: 'cqa-muted cqa-sim-note' }, 'Формулировки не менялись: модель не вызывалась, итоги пересчитаны по новым весам.')
+              : h('ul', { class: 'cqa-sim-crit' }, r.criteria.map(c => {
+                  const agree = c.human_decided
+                    ? h('span', { class: `cqa-sim-agree ${c.agree_after > c.agree_before ? 'cqa-ok' : c.agree_after < c.agree_before ? 'cqa-bad' : ''}` },
+                        `с проверяющими: ${c.agree_before}/${c.human_decided} → ${c.agree_after}/${c.human_decided}`)
+                    : h('span', { class: 'cqa-muted' }, 'решений по апелляциям нет');
+                  return h('li', null,
+                    h('b', null, c.criterion_name), h('span', { class: 'cqa-pill' }, REASON[c.reason] || c.reason),
+                    h('span', { class: 'cqa-muted cqa-num' }, `ответ изменился в ${c.changed} из ${c.evaluated}`), agree);
+                })),
+            moved.length > 0 && h('ol', { class: 'cqa-sim-dialogs' }, moved.slice(0, 8).map(d => {
+              const diff = (d.new_total ?? 0) - (d.old_total ?? 0);
+              return h('li', null,
+                h('a', { class: 'cqa-sim-link cqa-num', href: `#/dialogs/${encodeURIComponent(d.conversation_id)}` }, d.conversation_id),
+                h('span', { class: 'cqa-num' }, `${fmt(d.old_total, 1)} → ${fmt(d.new_total, 1)}`,
+                  Math.abs(diff) >= 0.05 && h('em', { class: diff > 0 ? 'cqa-ok' : 'cqa-bad' }, ` ${diff > 0 ? '+' : ''}${fmt(diff, 1)}`)),
+                d.changes.filter(x => x.changed).map(x => h('span', { class: 'cqa-sim-change', title: x.explanation || '' },
+                  `${x.criterion_name}: ${answerLabel(x.criterion_id, x.old_answer)} → ${answerLabel(x.criterion_id, x.new_answer)}`,
+                  x.human_answer != null && String(x.human_answer) !== String(x.new_answer) && h('b', { class: 'cqa-bad' }, ' · против решения проверяющего'))));
+            })),
+            moved.length > 8 && h('p', { class: 'cqa-muted' }, `и ещё ${moved.length - 8}`),
+            r.failed > 0 && h('p', { class: 'cqa-bad' }, `Не удалось проверить ${r.failed} диал.`),
+            h('p', { class: 'cqa-muted cqa-sim-note' },
+              `${r.model?.name || 'модель'} · ${(r.duration_ms / 1000).toFixed(1)} с${r.usage?.cost_usd ? ` · $${r.usage.cost_usd.toFixed(3)}` : ''}. Ничего не сохранено.`),
+          ]);
   }
 
   // Scale the other weights so the scored criteria add up to exactly 100 (whole numbers,
@@ -222,7 +296,7 @@ export async function mountChecklist(root) {
     try {
       const saved = await api.saveChecklist(S.draft);
       S.versions = await api.listChecklistVersions();
-      S.saved = saved; S.draft = clone(saved); S.showErrors = false;
+      S.saved = saved; S.draft = clone(saved); S.showErrors = false; S.sim = null;
       toast(`Сохранено как v${saved.version}. Переоцените диалоги на странице «Диалоги».`, { icon: icon('check', 16) });
     } catch (e) { toast(`Не сохранилось: ${e.message}`, { icon: icon('alert', 16) }); }
     S.saving = false; renderMain(); renderSide();

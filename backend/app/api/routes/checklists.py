@@ -3,8 +3,9 @@ from typing import Any
 from fastapi import APIRouter, Body, HTTPException, status
 
 from app.api import serializers as ser
-from app.api.deps import SessionDep
+from app.api.deps import MLDep, SessionDep
 from app.services import checklists as checklist_service
+from app.services import simulation as simulation_service
 from app.services.checklist_document import (
     DocumentError,
     document_to_checklist_in,
@@ -61,6 +62,27 @@ async def save_checklist(session: SessionDep, body: dict[str, Any] = Body(...)):
     doc = await checklist_service.current_document(session, checklist)
     await session.commit()
     return doc
+
+
+@router.post("/active/simulate")
+async def simulate_checklist(session: SessionDep, ml: MLDep, body: dict[str, Any] = Body(...)):
+    """Dry run of a draft on already evaluated dialogs. Nothing is saved.
+
+    Body: `{"document": <checklist document>, "limit": 10}`. Only criteria whose wording,
+    type, scale or N/A rule changed are sent to the model; the rest of the answers are reused.
+    """
+    raw = body.get("document") if isinstance(body.get("document"), dict) else body
+    try:
+        data = document_to_checklist_in(raw)
+    except DocumentError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "; ".join(exc.errors)) from exc
+    checklist = await checklist_service.ensure_default_checklist(session)
+    active = await checklist_service.snapshot(session, checklist)
+    result = await simulation_service.simulate(
+        session, checklist, active, raw, data, ml, limit=body.get("limit") or 10
+    )
+    await session.rollback()
+    return result
 
 
 @router.post("/active/reset")
