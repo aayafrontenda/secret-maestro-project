@@ -52,6 +52,9 @@ STANDARD_GUIDELINES: tuple[str, ...] = (
     "Для пропущенного действия укажите место, где оно ожидалось. Для N/A объясните, какое условие выполнено.",
     "Реплики бота и системные события — контекст, оценивается только оператор.",
     "Теги и вложения в оценку не входят.",
+    # The backend adds this from the checklist's first_response_threshold_sec (digits are ignored when
+    # comparing, so any threshold matches). The first-reply wait is deliberately not scored by 06.
+    "Порог первой реакции — 180 с: если клиент ждал ответа оператора дольше, это явное ожидание.",
 )
 
 NOISE = re.compile(r"[\W\d_]+", re.UNICODE)

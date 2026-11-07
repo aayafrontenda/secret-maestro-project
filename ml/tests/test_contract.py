@@ -169,6 +169,14 @@ def test_user_added_guideline_reaches_every_prompt():
     assert llm.prompts and all(rule in p for p in llm.prompts)
 
 
+def test_backend_first_response_threshold_counts_as_a_standard_rule():
+    from maestro.presets import extra_guidelines
+
+    # As backend/app/services/evaluations.py builds it from first_response_threshold_sec.
+    line = "Порог первой реакции — 240 с: если клиент ждал ответа оператора дольше, это явное ожидание."
+    assert extra_guidelines([line]) == []
+
+
 def test_standard_guidelines_go_only_to_the_generic_evaluator():
     standard = "Теги и вложения в оценку не входят."
     new = {
