@@ -62,6 +62,9 @@ async def test_list_dialogs_rows(ui: AsyncClient):
         "evaluated_at": None,
         "appeals_open": 0,
         "appeals_total": 0,
+        "review_status": "none",
+        "reviewed_at": None,
+        "reviewed_by": None,
     }
     assert row["turns"] > 0
 

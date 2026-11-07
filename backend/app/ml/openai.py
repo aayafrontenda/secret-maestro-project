@@ -57,6 +57,11 @@ Rules:
   Write it before choosing the answer, and make the answer agree with it."""
 
 
+def is_local_url(url: str | None) -> bool:
+    host = httpx.URL(url or "").host or ""
+    return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local")
+
+
 @dataclass
 class ChatUsage:
     prompt_tokens: int = 0
@@ -82,6 +87,7 @@ class OpenAIChat:
         timeout_s: float = 120.0,
         max_retries: int = 2,
         temperature: float | None = 0.0,
+        reasoning_effort: str | None = None,
         price_input_per_1m: float = 0.0,
         price_output_per_1m: float = 0.0,
         transport: httpx.AsyncBaseTransport | None = None,
@@ -94,13 +100,13 @@ class OpenAIChat:
         self.base_url = base_url
         self._max_retries = max(0, max_retries)
         self._temperature = temperature
+        self._reasoning_effort = reasoning_effort
         self._price_in = price_input_per_1m
         self._price_out = price_output_per_1m
 
     @property
     def is_local(self) -> bool:
-        host = httpx.URL(self.base_url).host or ""
-        return host in {"localhost", "127.0.0.1", "::1"} or host.endswith(".local")
+        return is_local_url(self.base_url)
 
     def cost(self, usage: ChatUsage) -> float:
         return round(
@@ -122,6 +128,8 @@ class OpenAIChat:
         }
         if self._temperature is not None:
             body["temperature"] = self._temperature
+        if self._reasoning_effort:
+            body["reasoning_effort"] = self._reasoning_effort
 
         last_exc: Exception | None = None
         for attempt in range(self._max_retries + 1):

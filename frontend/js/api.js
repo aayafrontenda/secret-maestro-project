@@ -49,6 +49,7 @@ function normEvaluation(ev) {
     latency_ms: num(ev.latency_ms),
     cost_usd: num(ev.cost_usd),
     created_at: ev.created_at ?? new Date().toISOString(),
+    review: ev.review ?? null,
     results: (ev.results || []).map(normResult),
   };
 }
@@ -62,6 +63,9 @@ function normRow(r) {
     checklist_version: r.checklist_version ?? null,
     appeals_open: Number(r.appeals_open) || 0,
     appeals_total: Number(r.appeals_total) || 0,
+    review_status: r.review_status ?? (r.appeals_open ? 'appeal' : r.evaluation === 'done' || r.total != null ? 'to_review' : 'none'),
+    reviewed_at: r.reviewed_at ?? null,
+    reviewed_by: r.reviewed_by ?? null,
   };
 }
 
@@ -111,8 +115,16 @@ const httpApi = {
   createAppeal: body => req('/appeals', { method: 'POST', body }),
   decideAppeal: (id, body) => req(`/appeals/${id}/decision`, { method: 'POST', body }),
 
-  // Очередь «Требуют внимания» и аналитика передач от бота оператору.
-  getAttention: threshold => req(`/attention${qs({ threshold })}`),
+  // Reviewer closes a dialog or returns it to the worklist.
+  markReviewed: (evaluation_id, body = {}) => req(`/evaluations/${evaluation_id}/review`, { method: 'POST', body }).then(normEvaluation),
+  unmarkReviewed: evaluation_id => req(`/evaluations/${evaluation_id}/review`, { method: 'DELETE' }).then(normEvaluation),
+
+  // Evaluation providers: cloud, local ML service, demo; switchable at runtime.
+  getML: () => req('/ml'),
+  setML: provider => req('/ml', { method: 'PUT', body: { provider } }),
+
+  // Attention queue and bot handoff insights.
+  getAttention: (threshold, include_reviewed = false) => req(`/attention${qs({ threshold, include_reviewed: include_reviewed || null })}`),
   getHandoffs: () => req('/insights/handoffs'),
   analyzeHandoffs: (force = false) => req('/insights/handoffs/analyze', { method: 'POST', body: { force } }),
   getDialogHandoff: id => req(`/dialogs/${enc(id)}/handoff`).catch(() => null),

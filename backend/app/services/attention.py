@@ -89,7 +89,9 @@ def _priority(reasons: list[dict[str, Any]], threshold: float) -> float:
     return p
 
 
-async def attention_queue(session: AsyncSession, threshold: float) -> dict[str, Any]:
+async def attention_queue(
+    session: AsyncSession, threshold: float, *, include_reviewed: bool = False
+) -> dict[str, Any]:
     latest_id = (
         select(func.max(Evaluation.id))
         .where(Evaluation.status.in_([EvaluationStatus.completed, EvaluationStatus.failed]))
@@ -133,6 +135,8 @@ async def attention_queue(session: AsyncSession, threshold: float) -> dict[str, 
     for ev in evaluations:
         if ev.status == EvaluationStatus.failed and ev.dialog_id in completed:
             ev = completed[ev.dialog_id]
+        if ev.reviewed_at and not pending.get(ev.id) and not include_reviewed:
+            continue  # a supervisor already checked this verdict
         reasons = _reasons(ev, pending.get(ev.id, 0), threshold)
         if not reasons:
             continue
@@ -149,6 +153,10 @@ async def attention_queue(session: AsyncSession, threshold: float) -> dict[str, 
                 "total": ev.final_total,
                 "checklist_version": ev.checklist_snapshot.get("version"),
                 "priority": round(_priority(reasons, threshold), 2),
+                "reviewed_at": ev.reviewed_at.isoformat().replace("+00:00", "Z")
+                if ev.reviewed_at
+                else None,
+                "reviewed_by": ev.reviewed_by,
                 "reasons": reasons,
             }
         )

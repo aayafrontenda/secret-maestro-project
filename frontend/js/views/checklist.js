@@ -161,6 +161,8 @@ export async function mountChecklist(root) {
         }, h('i', { style: { width: '100%', background: 'var(--c)' } }))),
         sum < 100 && h('span', { class: 'cqa-seg cqa-seg--gap', style: { flex: `${100 - sum} 1 0` }, title: `Не распределено: ${100 - sum}` })),
 
+      !ok && scored.length > 1 && h('button', { class: 'cqa-btn cqa-btn--outline cqa-btn--block', onclick: rebalance, title: 'Вес открытого критерия не меняется, остальные пересчитываются пропорционально' },
+        icon('refresh', 16), S.open && scored.some(c => c.id === S.open) ? 'Распределить остальные до 100' : 'Распределить до 100'),
       h('button', { class: 'cqa-btn cqa-btn--primary cqa-btn--block', disabled: S.saving || !isDirty, onclick: save },
         icon(S.saving ? 'refresh' : 'check', 16, S.saving ? 'cqa-spin' : ''), isDirty ? `Сохранить как v${S.versions[S.versions.length - 1]?.version + 1}` : 'Изменений нет'),
       isDirty && h('button', { class: 'cqa-btn cqa-btn--ghost cqa-btn--sm cqa-btn--left', onclick: () => { S.draft = clone(S.saved); S.showErrors = false; S.open = null; renderMain(); renderSide(); } }, icon('x', 14), 'Отменить изменения'),
@@ -187,6 +189,30 @@ export async function mountChecklist(root) {
           h('span', null, v.updated_at ? new Date(v.updated_at).toLocaleString('ru-RU', { dateStyle: 'short', timeStyle: 'short' }) : 'исходный'),
           h('span', { class: 'cqa-muted cqa-num' }, `${v.criteria} крит.`))))),
     ));
+  }
+
+  // Scale the other weights so the scored criteria add up to exactly 100 (whole numbers,
+  // largest remainder), keeping the weight of the criterion being edited.
+  function rebalance() {
+    const scored = S.draft.criteria.filter(c => c.type !== 'flag');
+    const fixed = scored.find(c => c.id === S.open);
+    const others = scored.filter(c => c !== fixed);
+    const target = 100 - (fixed ? Math.round(Number(fixed.weight) || 0) : 0);
+    const base = others.reduce((a, c) => a + (Number(c.weight) || 0), 0);
+    if (fixed) fixed.weight = Math.round(Number(fixed.weight) || 0);
+    if (!others.length || target < others.length || base <= 0) {
+      toast(target < others.length ? 'Вес открытого критерия слишком большой: остальным не хватит баллов' : 'Сначала задайте веса', { icon: icon('alert', 16) });
+      return;
+    }
+    const raw = others.map(c => ((Number(c.weight) || 0) * target) / base);
+    const out = raw.map(r => Math.max(1, Math.floor(r)));
+    let rest = target - out.reduce((a, b) => a + b, 0);
+    const order = raw.map((r, i) => [r - Math.floor(r), i]).sort((a, b) => b[0] - a[0]).map(x => x[1]);
+    for (let k = 0; rest > 0; k = (k + 1) % order.length, rest--) out[order[k]]++;
+    for (let k = 0; rest < 0; k = (k + 1) % order.length) if (out[order[order.length - 1 - k]] > 1) { out[order[order.length - 1 - k]]--; rest++; }
+    others.forEach((c, i) => { c.weight = out[i]; });
+    renderMain(); renderSide();
+    toast('Веса распределены: сумма 100', { icon: icon('check', 16) });
   }
 
   async function save() {

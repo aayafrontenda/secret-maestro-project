@@ -286,12 +286,14 @@ class HandoffAnalyzer:
         mask: bool = True,
         language: str = "ru",
         concurrency: int = 4,
+        gate: asyncio.Lock | None = None,
     ) -> None:
         self._sf = session_factory
         self._chat = chat
         self._mask = mask and not (chat and chat.is_local)
         self._language = language
         self._concurrency = concurrency
+        self._gate = gate
         self._task: asyncio.Task[None] | None = None
         self.state: dict[str, Any] = {"running": False, "done": 0, "failed": 0, "total": 0}
         self.usage = ChatUsage()
@@ -332,9 +334,11 @@ class HandoffAnalyzer:
                 if d is None:
                     return
                 try:
-                    result = await analyze_with_llm(
-                        self._chat, d, mask=self._mask, language=self._language, usage=self.usage
-                    )
+                    if self._gate is not None:
+                        async with self._gate:
+                            result = await self._analyze(d)
+                    else:
+                        result = await self._analyze(d)
                 except Exception as exc:  # noqa: BLE001 — one bad dialog must not stop the job
                     self.state["failed"] += 1
                     log.warning("handoff analysis failed for %s: %s", dialog_id, exc)
@@ -349,6 +353,11 @@ class HandoffAnalyzer:
             await asyncio.gather(*(one(i) for i in ids))
         finally:
             self.state["running"] = False
+
+    async def _analyze(self, d: Dialog) -> dict[str, Any]:
+        return await analyze_with_llm(
+            self._chat, d, mask=self._mask, language=self._language, usage=self.usage
+        )
 
     async def stop(self) -> None:
         if self._task and not self._task.done():

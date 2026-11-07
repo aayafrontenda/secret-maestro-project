@@ -54,14 +54,28 @@ One GPU scores one dialog at a time, about 24 s each, so one queue worker is eno
 The contract is in [`docs/ml-contract.md`](docs/ml-contract.md). With `ML_PROVIDER=mock`
 (default) a built-in heuristic answers instead, so the UI works before the model is ready.
 
-### Evaluate with an LLM directly (OpenAI or a local OpenAI-compatible server)
+### Evaluate with a cloud LLM (OpenAI or any OpenAI-compatible API)
 
 ```
 ML_PROVIDER=openai
 OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-4.1
-# local instead of cloud: OPENAI_BASE_URL=http://localhost:11434/v1 (Ollama), no key
+OPENAI_MODEL=gpt-5.6-luna
+OPENAI_TEMPERATURE=
+OPENAI_PRICE_INPUT_PER_1M=0.20
+OPENAI_PRICE_OUTPUT_PER_1M=1.20
+# OpenRouter instead: OPENAI_BASE_URL=https://openrouter.ai/api/v1, OPENAI_MODEL=google/gemini-3.7-flash
 ```
+
+**Several providers at once.** Every configured provider is available side by side: cloud
+(`OPENAI_API_KEY`), local (`ML_SERVICE_URL`) and the demo mock. `ML_PROVIDER` picks the default;
+the «Модель оценки» block on the dialogs page (or `PUT /api/ml {"provider": "http"}`) switches
+new evaluations to another one without a restart. The choice is kept in `data/runtime.json`.
+Finished evaluations keep their model, so local and cloud runs can be compared on the same dialogs.
+
+For a local model use `ML_PROVIDER=http` with the ML team's service (above). Plain Ollama behind
+`OPENAI_BASE_URL` is not set up for this: it cuts the prompt at 4096 tokens and qwen's thinking
+mode takes minutes per dialog. When both the evaluation model and the handoff analysis run on
+the local GPU, the backend serialises their requests (two at once used to crash Ollama).
 
 One request per dialog grades every criterion of the checklist version being evaluated; the
 JSON schema is built from the checklist, so a new or edited criterion works without code changes
@@ -135,7 +149,7 @@ Everything lives under `/api`; the request/response shapes are in
 | POST | `/datasets/import` `{group_id}` | Fetch a dataset from the organizer API (needs `ORGANIZER_API_URL`) |
 | POST | `/datasets/upload` `{name, payload}` | Dataset from a JSON document (organizer envelope or bare record list) |
 | POST | `/datasets/upload-file` (multipart) | Same, as a file upload — handy for curl |
-| GET | `/dialogs` | Rows for the list (`?channel=`, `?language=`, `?group_id=`): latest score, checklist version, appeal counters |
+| GET | `/dialogs` | Rows for the list (`?channel=`, `?language=`, `?group_id=`): latest score, checklist version, appeal counters, `review_status` (none · to_review · appeal · reviewed) |
 | GET | `/dialogs/{id}` | Organizer record (transcript as received) |
 | DELETE | `/dialogs/{id}` | Remove a dialog with its evaluations and appeals |
 | GET | `/dialogs/{id}/evaluation` | Latest **completed** evaluation or `404` |
@@ -155,7 +169,9 @@ Everything lives under `/api`; the request/response shapes are in
 | POST | `/evaluations/{id}/retry` | Re-queue a failed or cancelled evaluation |
 | GET/POST | `/appeals` | List (`?evaluation_id=`, `?status=open|confirmed|changed`) / dispute a criterion |
 | GET | `/appeals/{id}` | One appeal |
-| POST | `/appeals/{id}/decision` `{action, answer, reason}` | Reviewer decision; final total recalculated |
+| POST | `/appeals/{id}/decision` `{action, answer, reason, by?}` | Reviewer decision; final total recalculated; deciding the last open appeal marks the evaluation reviewed |
+| POST / DELETE | `/evaluations/{id}/review` `{by?, note?}` | Mark the verdict as checked by a supervisor / return it to the worklist (`409` while appeals are open) |
+| GET / PUT | `/ml` `{provider}` | Configured evaluation providers (cloud / local / demo, reachability) and the active one; `PUT` switches new evaluations without a restart |
 | GET | `/attention` | Review queue: grave violations, failed runs, open appeals, totals below `?threshold=` (default `ATTENTION_SCORE_THRESHOLD`), corrected model answers |
 | GET | `/insights/handoffs` | Bot → operator handoffs: topics, reasons, wait for the operator, per-dialog details, LLM job status |
 | POST | `/insights/handoffs/analyze` `{force?}` | Refine handoffs with the LLM in the background (`409` without a key) |
@@ -211,11 +227,13 @@ differ by ±0.01.
 | `ML_TIMEOUT_S` / `ML_MAX_RETRIES` | `180` / `2` | Per-request timeout; retries on 5xx/network errors |
 | `ML_MOCK_DELAY_S` | `0` | Mock only: seconds per evaluation, to rehearse a slow model |
 | `OPENAI_API_KEY` | — | Enables `ML_PROVIDER=openai` and LLM handoff analysis |
-| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible API; a local one (Ollama, vLLM) needs no key |
-| `OPENAI_MODEL` / `OPENAI_TEMPERATURE` | `gpt-4.1` / `0` | Model; leave the temperature empty for models that reject it |
+| `OPENAI_BASE_URL` | `https://api.openai.com/v1` | Any OpenAI-compatible cloud API (OpenRouter…); local models go through `ML_PROVIDER=http` |
+| `OPENAI_MODEL` / `OPENAI_TEMPERATURE` | `gpt-4.1` / `0` | Model; leave the temperature empty for models that reject it (gpt-5.x) |
+| `OPENAI_REASONING_EFFORT` | — | `none` / `low` / `medium` / `high` for reasoning models |
 | `OPENAI_PRICE_INPUT_PER_1M` / `…_OUTPUT_…` | `2.0` / `8.0` | USD per 1M tokens for the cost shown per evaluation |
 | `PII_MASKING` | `true` | Mask personal data before it reaches a non-local LLM |
 | `OUTPUT_LANGUAGE` | `ru` | Language of model explanations |
+| `RUNTIME_STATE_FILE` | `data/runtime.json` | Where the provider chosen in the UI is kept; empty to disable |
 | `ATTENTION_SCORE_THRESHOLD` | `60` | Totals below this land in the attention queue |
 | `QUEUE_WORKERS` | `3` | Parallel evaluations against the ML service (`1` for one local GPU) |
 | `EVALUATION_WAIT_S` | `85` | How long `POST /api/evaluations` waits before returning the in-progress state |

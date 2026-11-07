@@ -23,6 +23,7 @@ class DecisionBody(BaseModel):
     action: str = Field(description="confirm | change")
     answer: Any | None = None
     reason: str = Field(min_length=1, max_length=4000)
+    by: str | None = Field(default=None, max_length=100, description="Reviewer name")
 
 
 @router.get("")
@@ -87,6 +88,7 @@ async def decide_appeal(appeal_id: int, body: DecisionBody, session: SessionDep)
             decision=body.action,  # type: ignore[arg-type]
             new_answer=body.answer if body.action == "change" else None,
             reason=body.reason,
+            by=body.by,
         )
     except ValueError as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc

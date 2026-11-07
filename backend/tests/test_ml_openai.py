@@ -225,3 +225,63 @@ def test_pii_counter():
 
 async def _no_sleep(_):
     return None
+
+
+async def test_gated_client_serialises_calls():
+    import asyncio
+
+    from app.ml.base import GatedMLClient
+
+    state = {"now": 0, "max": 0}
+
+    class Slow:
+        name = "slow"
+
+        async def evaluate(self, request):
+            state["now"] += 1
+            state["max"] = max(state["max"], state["now"])
+            await asyncio.sleep(0.01)
+            state["now"] -= 1
+            return "ok"
+
+        async def health(self):
+            return True
+
+        async def aclose(self):
+            return None
+
+    gate = asyncio.Lock()
+    client = GatedMLClient(Slow(), gate)
+    assert client.name == "slow"
+    assert await asyncio.gather(*(client.evaluate(_request()) for _ in range(4))) == ["ok"] * 4
+    assert state["max"] == 1
+
+
+def test_ml_is_local():
+    from app.core.config import Settings
+    from app.ml import ml_is_local
+
+    assert ml_is_local(Settings(ml_provider="http", ml_service_url="http://127.0.0.1:8001"))
+    assert not ml_is_local(Settings(ml_provider="http", ml_service_url="https://ml.example.com"))
+    assert ml_is_local(Settings(ml_provider="openai", openai_base_url="http://localhost:11434/v1"))
+    assert not ml_is_local(Settings(ml_provider="openai"))
+    assert not ml_is_local(Settings(ml_provider="mock"))
+
+
+async def test_reasoning_effort_is_sent():
+    seen = {}
+
+    def handler(req):
+        seen["body"] = json.loads(req.content)
+        return httpx.Response(200, json=_completion(GOOD))
+
+    chat = OpenAIChat(
+        api_key="k",
+        base_url="https://api.test/v1",
+        model="m",
+        temperature=None,
+        reasoning_effort="low",
+        transport=httpx.MockTransport(handler),
+    )
+    await OpenAIMLClient(chat).evaluate(_request())
+    assert seen["body"]["reasoning_effort"] == "low" and "temperature" not in seen["body"]

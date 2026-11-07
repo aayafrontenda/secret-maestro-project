@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import JSON, Enum, ForeignKey, Integer, Text
+from sqlalchemy import JSON, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
@@ -42,6 +42,7 @@ class Appeal(TimestampMixin, Base):
     new_answer: Mapped[Any | None] = mapped_column(JSON)
     decision_reason: Mapped[str | None] = mapped_column(Text)
     decided_at: Mapped[datetime | None] = mapped_column(UTCDateTime)
+    decided_by: Mapped[str | None] = mapped_column(String(100))
 
     evaluation: Mapped["Evaluation"] = relationship(back_populates="appeals")
     criterion_result: Mapped["CriterionResult"] = relationship(back_populates="appeals")

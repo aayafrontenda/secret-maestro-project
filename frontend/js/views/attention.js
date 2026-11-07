@@ -1,9 +1,9 @@
-// Очередь «Требуют внимания»: грубые ошибки, сбои оценки, апелляции, низкие баллы.
+// Attention queue: grave errors, failed runs, appeals, low totals.
 import { api } from '../api.js';
 import { fmt } from '../scoring.js';
 import { h, fill, store } from '../util.js';
 import { icon } from '../icons.js';
-import { pageLayout, pageHead, tabs, sideBlock, stat, emptyState, input } from '../ui.js';
+import { pageLayout, pageHead, tabs, sideBlock, stat, emptyState, input, toggle } from '../ui.js';
 
 const KIND = {
   grave: { label: 'Грубая ошибка', pill: 'cqa-pill--red', icon: 'alert' },
@@ -36,13 +36,13 @@ function focusCrit(item) {
 }
 
 export async function mountAttention(root) {
-  const S = { data: null, error: null, tab: 'all', threshold: store('cqa.attention.threshold') ?? null };
+  const S = { data: null, error: null, tab: 'all', threshold: store('cqa.attention.threshold') ?? null, withReviewed: false };
   const L = pageLayout();
   fill(root, L.el);
   fill(L.main, h('div', { class: 'cqa-loading' }, icon('refresh', 16, 'cqa-spin'), 'Собираем очередь…'));
 
   async function load() {
-    try { S.data = await api.getAttention(S.threshold ?? undefined); S.error = null; }
+    try { S.data = await api.getAttention(S.threshold ?? undefined, S.withReviewed); S.error = null; }
     catch (e) { S.error = e.message; }
   }
 
@@ -50,7 +50,7 @@ export async function mountAttention(root) {
     const d = S.data || { items: [], counts: {}, threshold: 60 };
     const list = d.items.filter(i => S.tab === 'all' || i.reasons.some(r => r.kind === S.tab));
     fill(L.main,
-      pageHead({ title: 'Требуют внимания', count: d.counts.total ?? 0, sub: 'Сначала грубые ошибки, затем сбои оценки, открытые апелляции, низкие баллы и ответы модели, которые бэкенду пришлось исправить. По каждому диалогу — последняя оценка.' }),
+      pageHead({ title: 'Требуют внимания', count: d.counts.total ?? 0, sub: 'Сначала грубые ошибки, затем сбои оценки, открытые апелляции, низкие баллы и ответы модели, которые бэкенду пришлось исправить. По каждому диалогу — последняя оценка; проверенные скрыты.' }),
       h('div', { class: 'cqa-filters' },
         tabs([{ value: 'all', label: 'Все', count: d.counts.total ?? 0 },
           ...ORDER.map(k => ({ value: k, label: KIND[k].label, count: d.counts[k] ?? 0 })).filter(o => o.count > 0 || S.tab === o.value)],
@@ -70,6 +70,7 @@ export async function mountAttention(root) {
                 h('span', { class: 'cqa-muted' }, `${item.channel === 'voice call' ? 'Звонок' : 'Чат'} · ${item.language}`),
                 h('span', { class: 'cqa-ap-date cqa-num' }, item.total == null ? '—' : h('b', null, fmt(item.total)))),
               item.reasons.map(r => reasonLine(r, d.threshold)),
+              item.reviewed_at && h('span', { class: 'cqa-muted' }, icon('check', 12), ` Проверено${item.reviewed_by ? ` · ${item.reviewed_by}` : ''}`),
               h('div', { class: 'cqa-ap-foot' }, h('span', { class: 'cqa-ap-go' }, 'Открыть', icon('chevronRight', 14)))))),
     );
 
@@ -88,7 +89,8 @@ export async function mountAttention(root) {
       sideBlock('Порог низкого балла',
         h('div', { class: 'cqa-inline' }, thr,
           h('button', { class: 'cqa-btn cqa-btn--outline cqa-btn--sm', onclick: () => apply(thr.value) }, 'Применить')),
-        h('p', { class: 'cqa-muted' }, 'Диалоги с итогом ниже порога попадают в очередь вместе с двумя самыми слабыми критериями.')),
+        h('p', { class: 'cqa-muted' }, 'Диалоги с итогом ниже порога попадают в очередь вместе с двумя самыми слабыми критериями.'),
+        toggle({ id: 'cqa-att-reviewed', checked: S.withReviewed, label: 'Показывать проверенные', onChange: async v => { S.withReviewed = v; await load(); render(); } })),
       sideBlock('Порядок',
         h('ol', { class: 'cqa-steps-list' },
           h('li', null, 'Грубая ошибка: оскорбление, услуга в обход компании, утечка данных.'),
