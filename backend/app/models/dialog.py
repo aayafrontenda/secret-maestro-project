@@ -24,6 +24,9 @@ class Dialog(TimestampMixin, Base):
     message_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     audio_url: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(32), default="manual")  # organizer_api|file|manual
+    # Bot -> operator handoff analysis (app/services/handoff.py) and who produced it.
+    handoff: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    handoff_source: Mapped[str | None] = mapped_column(String(16))  # heuristic | llm
 
     evaluations: Mapped[list["Evaluation"]] = relationship(
         back_populates="dialog", cascade="all, delete-orphan", passive_deletes=True

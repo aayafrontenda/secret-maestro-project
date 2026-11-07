@@ -111,6 +111,13 @@ const httpApi = {
   createAppeal: body => req('/appeals', { method: 'POST', body }),
   decideAppeal: (id, body) => req(`/appeals/${id}/decision`, { method: 'POST', body }),
 
+  // Очередь «Требуют внимания» и аналитика передач от бота оператору.
+  getAttention: threshold => req(`/attention${qs({ threshold })}`),
+  getHandoffs: () => req('/insights/handoffs'),
+  analyzeHandoffs: (force = false) => req('/insights/handoffs/analyze', { method: 'POST', body: { force } }),
+  getDialogHandoff: id => req(`/dialogs/${enc(id)}/handoff`).catch(() => null),
+  knowledgeUrl: () => `${CONFIG.API_BASE}/insights/handoffs/knowledge?format=jsonl`,
+
   resetAll: async () => {},
 };
 

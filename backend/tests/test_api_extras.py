@@ -22,7 +22,7 @@ async def test_health_and_queue(client: AsyncClient):
     assert r.status_code == 200
     body = r.json()
     assert body["status"] == "ok" and body["database"] == "ok"
-    assert body["ml"] == {"provider": "mock", "reachable": True}
+    assert body["ml"]["provider"] == "mock" and body["ml"]["reachable"] is True
     assert body["queue"]["workers"] == 2
     assert (await client.get(f"{API}/queue")).json()["queued"] == 0
     assert (await client.get("/")).json()["api"] == "/api"
@@ -391,7 +391,8 @@ async def test_ml_request_carries_checklist_guidelines(seeded: AsyncClient):
     assert (await seeded.put(f"{API}/checklists/active", json=doc)).status_code == 200
     r = await seeded.post(f"{API}/evaluations", json={"conversation_id": "p1-ru-001"})
     assert r.status_code == 200
-    assert seen["guidelines"] == ["Правило один.", "Правило два."]
+    assert seen["guidelines"][:2] == ["Правило один.", "Правило два."]
+    assert "180 с" in seen["guidelines"][2]  # first-response threshold from the checklist rules
 
 
 async def test_organizer_errors_are_readable_and_hide_the_signed_url(
