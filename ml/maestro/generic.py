@@ -25,6 +25,7 @@ Rules:
 
 Reply in JSON with the fields in this order:
 - "why": two or three sentences in English: what the criterion requires and what the chat shows.
+- "na_applies" (only when the criterion allows N/A): whether its N/A condition holds in this chat.
 - "answer": your answer.
 - "evidence": IDs of up to three messages that support the answer; empty if the answer is about something that never happened.
 - "explanation": one or two sentences for the user, in the language you are told, stating what the evidence shows."""
@@ -65,10 +66,29 @@ def _describe(criterion: GenericCriterion) -> str:
     else:
         lines.append('Answer "yes" if the rule is met and "no" if it is not.')
     if criterion.allow_na:
-        lines.append(f'Answer "na" only if this N/A condition holds: {criterion.na_rule or "the criterion does not apply"}')
+        lines.append(
+            f'N/A condition: {criterion.na_rule or "the criterion does not apply"}. First decide whether it holds '
+            '(step 1 of the checklist: applicability) and set "na_applies". If it holds, the answer is "na", even if '
+            'the rest of the rule could be judged; if it does not hold, judge the rule and do not answer "na".'
+        )
     else:
         lines.append('"na" is not allowed for this criterion.')
     return "\n".join(lines)
+
+
+def _normalize_answer(answer: object) -> object:
+    """Models (Gemini through the OpenAI-compatible API in particular) may return "10", "N/A" or "Yes";
+    without this a scale answer "10" did not match the level 10 and silently became the lowest level."""
+    if isinstance(answer, bool):
+        return "yes" if answer else "no"
+    if isinstance(answer, float) and answer.is_integer():
+        return int(answer)
+    if isinstance(answer, str):
+        text = answer.strip().lower().replace("/", "").replace(" ", "")
+        if text.lstrip("-").isdigit():
+            return int(text)
+        return {"na": "na", "да": "yes", "нет": "no", "иә": "yes", "жоқ": "no"}.get(text, text)
+    return answer
 
 
 def evaluate_generic(ctx: Context, criterion: GenericCriterion, language: str) -> GenericAnswer:
@@ -84,11 +104,12 @@ def evaluate_generic(ctx: Context, criterion: GenericCriterion, language: str) -
         "type": "object",
         "properties": {
             "why": {"type": "string"},
+            **({"na_applies": {"type": "boolean"}} if criterion.allow_na else {}),
             "answer": {"enum": values},
             "evidence": {"type": "array", "maxItems": 3, "items": {"type": "string", "enum": ids}},
             "explanation": {"type": "string"},
         },
-        "required": ["why", "answer", "evidence", "explanation"],
+        "required": ["why", *(["na_applies"] if criterion.allow_na else []), "answer", "evidence", "explanation"],
     }
     prompt = (
         f"The whole chat:\n<messages>\n{render_messages(shown)}\n</messages>\n\n"
@@ -96,9 +117,15 @@ def evaluate_generic(ctx: Context, criterion: GenericCriterion, language: str) -
         f"Write \"explanation\" in {LANGUAGE_NAMES.get(language, 'Russian')}."
     )
     data = ctx.call(f"generic:{criterion.key}", SYSTEM_PROMPT, prompt, schema)
-    answer = data["answer"]
+    answer = _normalize_answer(data["answer"])
+    if criterion.allow_na and data.get("na_applies") is True:
+        answer = "na"  # applicability is decided first, as on page 2 of the checklist
     if answer not in values:
-        answer = "no" if criterion.answer_type != "scale" else min(v for v in values if isinstance(v, int))
+        levels = [v for v in values if isinstance(v, int)]
+        if criterion.answer_type == "scale" and isinstance(answer, int) and levels:
+            answer = min(levels, key=lambda v: abs(v - answer))
+        else:
+            answer = "no" if criterion.answer_type != "scale" else min(levels)
     evidence = [i for i in data.get("evidence") or [] if i in ids]
     operator_evidence = [i for i in evidence if (m := ctx.message(i)) and m.role.value == "operator"]
     if criterion.is_flag and answer == "yes" and not operator_evidence:

@@ -182,3 +182,26 @@ def test_generic_criterion_is_told_what_not_to_judge():
     assert "Judge ONLY what this criterion's rule asks" in system
     assert "Эмпатия" not in user  # the replaced criterion is gone
     assert "Корректная и полная консультация" in user and "Грубые ошибки" in user
+
+
+def test_generic_answers_given_as_strings_are_understood():
+    from maestro.generic import _normalize_answer
+
+    assert _normalize_answer("10") == 10 and _normalize_answer(10.0) == 10
+    assert _normalize_answer("N/A") == "na" and _normalize_answer("Yes") == "yes"
+    checklist = [dict(c) for c in CHECKLIST]
+    checklist[5] = {**checklist[5], "title": "Понятность инструкций", "rule": "Оцените конкретность инструкций.",
+                    "scale_steps": [{"value": 10, "label": "конкретно"}, {"value": 5, "label": "частично"}, {"value": 0, "label": "нет"}],
+                    "scale_max": 10}
+    llm = FakeLLM({**ANSWERS, "generic": {"answer": "10", "evidence": [], "explanation": "ok"}})
+    response = evaluate(request([Criterion(**c) for c in checklist]), llm)
+    assert next(r for r in response.results if r.code == "c6").answer == 10
+
+
+def test_generic_na_condition_takes_priority():
+    checklist = [dict(c) for c in CHECKLIST]
+    checklist[4] = {**checklist[4], "title": "Извинение", "allow_na": True, "na_rule": "клиент не выражал недовольства",
+                    "rule": "Да — если клиент выразил недовольство, оператор извинился."}
+    llm = FakeLLM({**ANSWERS, "generic": {"na_applies": True, "answer": "no", "evidence": [], "explanation": "ok"}})
+    response = evaluate(request([Criterion(**c) for c in checklist]), llm)
+    assert next(r for r in response.results if r.code == "c5").answer == "na"
