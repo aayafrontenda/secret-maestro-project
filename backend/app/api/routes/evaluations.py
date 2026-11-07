@@ -119,8 +119,18 @@ async def batch_status(batch_id: str, session: SessionDep):
     counts = await evaluation_service.batch_progress(session, batch_id)
     if counts["total"] == 0:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Батч не найден")
-    done = counts["completed"] + counts["failed"]
+    done = counts["completed"] + counts["failed"] + counts["cancelled"]
     return {"batch_id": batch_id, **counts, "done": done, "finished": done == counts["total"]}
+
+
+@router.post("/batch/{batch_id}/cancel")
+async def cancel_batch(batch_id: str, session: SessionDep):
+    """Cancel the batch's evaluations that have not started yet; running ones finish."""
+    counts = await evaluation_service.batch_progress(session, batch_id)
+    if counts["total"] == 0:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Батч не найден")
+    cancelled = await evaluation_service.cancel_batch(session, batch_id)
+    return {"batch_id": batch_id, "cancelled": cancelled}
 
 
 @router.get("")
@@ -129,14 +139,17 @@ async def list_evaluations(
     conversation_id: str | None = None,
     batch_id: str | None = None,
     status_filter: str | None = Query(
-        default=None, alias="status", description="queued | running | completed | failed"
+        default=None,
+        alias="status",
+        description="queued | running | completed | failed | cancelled",
     ),
     limit: int = Query(default=200, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
 ):
     if status_filter and status_filter not in EvaluationStatus.__members__:
         raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, "status: queued | running | completed | failed"
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "status: queued | running | completed | failed | cancelled",
         )
     rows, _ = await evaluation_service.list_evaluations(
         session,
@@ -157,12 +170,12 @@ async def get_evaluation(evaluation_id: int, session: SessionDep):
 
 @router.post("/{evaluation_id}/retry", status_code=status.HTTP_202_ACCEPTED)
 async def retry_evaluation(evaluation_id: int, session: SessionDep, queue: QueueDep):
-    """Re-queue a failed evaluation (e.g. after the model came back)."""
+    """Re-queue a failed or cancelled evaluation (e.g. after the model came back)."""
     ev = await _get_or_404(session, evaluation_id)
-    if ev.status != EvaluationStatus.failed:
+    if ev.status not in (EvaluationStatus.failed, EvaluationStatus.cancelled):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            f"Оценка в статусе {ev.status.value}, повторить можно только failed",
+            f"Оценка в статусе {ev.status.value}, повторить можно только failed / cancelled",
         )
     ev.status = EvaluationStatus.queued
     ev.error = None

@@ -242,3 +242,89 @@ async def test_restart_requeues_unfinished(seeded: AsyncClient):
 @pytest.mark.parametrize("path", ["/api/v1/dialogs", "/api/v1/health"])
 async def test_no_v1_left(client: AsyncClient, path: str):
     assert (await client.get(path)).status_code == 404
+
+
+def test_dataset_url_keeps_signature():
+    from app.services.organizer import dataset_url
+
+    url = (
+        "https://x.powerplatform.com:443/invoke?api-version=1&sp=%2Ftriggers%2Fmanual%2Frun"
+        "&sv=1.0&sig=5Sog2M&group_id=DEV"
+    )
+    out = dataset_url(url, "CONTROL")
+    assert "sig=5Sog2M" in out and "api-version=1" in out and "sp=%2Ftriggers%2Fmanual%2Frun" in out
+    assert out.endswith("group_id=CONTROL") and "group_id=DEV" not in out
+    assert (
+        dataset_url("https://x.test/invoke?sig=a", "DEV")
+        == "https://x.test/invoke?sig=a&group_id=DEV"
+    )
+
+
+async def test_import_from_organizer_api(
+    client: AsyncClient, dev_dataset: dict, monkeypatch: pytest.MonkeyPatch
+):
+    import httpx
+
+    from app.core import config
+    from app.services import organizer
+
+    seen = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["url"] = str(request.url)
+        payload = dict(dev_dataset)
+        payload["data"] = {
+            **dev_dataset["data"],
+            "dataset_group_id": request.url.params["group_id"],
+            "records": dev_dataset["data"]["records"][:4],
+        }
+        return httpx.Response(200, json=payload)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        organizer.httpx,
+        "AsyncClient",
+        lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
+    )
+    monkeypatch.setattr(
+        config.get_settings(),
+        "organizer_api_url",
+        "https://org.test/invoke?api-version=1&sig=SIG&group_id=DEV",
+    )
+
+    r = await client.post(f"{API}/datasets/import", json={"group_id": "CONTROL"})
+    assert r.status_code == 200, r.text
+    assert r.json() == {"group_id": "CONTROL", "imported": 4}
+    assert "sig=SIG" in seen["url"] and "group_id=CONTROL" in seen["url"]
+    rows = (await client.get(f"{API}/dialogs", params={"group_id": "CONTROL"})).json()
+    assert len(rows) == 4
+
+
+async def test_cancel_batch(seeded: AsyncClient):
+    from app.ml.mock import MockMLClient
+
+    _use(seeded, MockMLClient(delay_s=0.3))
+    r = await seeded.post(f"{API}/evaluations/batch", json={})
+    bid = r.json()["batch_id"]
+    await asyncio.sleep(0.1)
+    c = await seeded.post(f"{API}/evaluations/batch/{bid}/cancel")
+    assert c.status_code == 200 and c.json()["cancelled"] >= 60
+    done = await _wait_batch(seeded, bid)
+    assert done["finished"] is True
+    assert done["cancelled"] == c.json()["cancelled"]
+    assert done["completed"] + done["cancelled"] == 65 and done["failed"] == 0
+    cancelled = (
+        await seeded.get(
+            f"{API}/evaluations", params={"batch_id": bid, "status": "cancelled", "limit": 500}
+        )
+    ).json()
+    # A cancelled evaluation can be retried.
+    _use(seeded, MockMLClient())
+    assert (
+        await seeded.post(f"{API}/evaluations/{cancelled[0]['evaluation_id']}/retry")
+    ).status_code == 202
+    await seeded.app.state.queue.join()  # type: ignore[attr-defined]
+    assert (await seeded.get(f"{API}/evaluations/{cancelled[0]['evaluation_id']}")).json()[
+        "status"
+    ] == "completed"
+    assert (await seeded.post(f"{API}/evaluations/batch/nope/cancel")).status_code == 404

@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     ml_service_url: str | None = None  # e.g. http://localhost:8001
     ml_timeout_s: float = 180.0
     ml_max_retries: int = 2
+    # Artificial latency of the mock provider, to rehearse slow-model behaviour (polling, batches).
+    ml_mock_delay_s: float = Field(default=0.0, ge=0, le=300)
 
     # In-process evaluation queue.
     queue_workers: int = Field(default=3, ge=1, le=32)

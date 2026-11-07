@@ -199,7 +199,8 @@ async def run_evaluation(session: AsyncSession, evaluation_id: int, ml: MLClient
     )
     if ev is None:
         raise EvaluationError(f"evaluation {evaluation_id} not found")
-    if ev.status == EvaluationStatus.completed:
+    if ev.status not in (EvaluationStatus.queued, EvaluationStatus.running):
+        # completed, failed or cancelled while waiting in the queue
         return await get_evaluation(session, evaluation_id)  # type: ignore[return-value]
 
     ev.status = EvaluationStatus.running
@@ -304,6 +305,22 @@ async def pending_evaluation_ids(session: AsyncSession) -> list[int]:
         .order_by(Evaluation.id)
     )
     return list((await session.scalars(stmt)).all())
+
+
+async def cancel_batch(session: AsyncSession, batch_id: str) -> int:
+    """Cancel evaluations of a batch that have not started yet. Running ones finish normally."""
+    rows = (
+        await session.scalars(
+            select(Evaluation).where(
+                Evaluation.batch_id == batch_id, Evaluation.status == EvaluationStatus.queued
+            )
+        )
+    ).all()
+    for ev in rows:
+        ev.status = EvaluationStatus.cancelled
+        ev.completed_at = _now()
+    await session.commit()
+    return len(rows)
 
 
 async def batch_progress(session: AsyncSession, batch_id: str) -> dict[str, int]:

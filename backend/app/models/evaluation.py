@@ -19,6 +19,7 @@ class EvaluationStatus(enum.StrEnum):
     running = "running"
     completed = "completed"
     failed = "failed"
+    cancelled = "cancelled"
 
 
 class Evaluation(TimestampMixin, Base):

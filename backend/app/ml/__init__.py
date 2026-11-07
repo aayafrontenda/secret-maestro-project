@@ -13,7 +13,7 @@ def build_ml_client(settings: Settings) -> MLClient:
             timeout_s=settings.ml_timeout_s,
             max_retries=settings.ml_max_retries,
         )
-    return MockMLClient()
+    return MockMLClient(delay_s=settings.ml_mock_delay_s)
 
 
 __all__ = ["HttpMLClient", "MLClient", "MLClientError", "MockMLClient", "build_ml_client"]

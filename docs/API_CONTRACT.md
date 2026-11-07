@@ -176,7 +176,9 @@ Swagger — `/docs`. Ниже — уточнения и то, что есть с
 2. если модель успела — возвращает готовую оценку (`status: "completed"`), как в контракте;
 3. если нет — возвращает ту же оценку со `status: "queued" | "running"` и пустым `results[]`.
    Клиент опрашивает `GET /api/evaluations/{evaluation_id}` (например, раз в 2 с), пока
-   `status` не станет `completed` (или `failed` — тогда в `error` текст причины).
+   `status` не станет `completed` (или `failed` / `cancelled` — тогда в `error` текст причины).
+
+Во фронте это сделано в `api.js` (`waitEvaluation`): вью получают готовую оценку, как раньше.
 
 Повторный `POST /api/evaluations` для того же диалога, пока первая оценка в работе, не создаёт
 вторую — возвращает ту же.
@@ -202,15 +204,21 @@ Swagger — `/docs`. Ниже — уточнения и то, что есть с
 | GET | `/api/dialogs/:id/audio/stream` | Запись через бэк (если прямая SAS-ссылка не играет); в ответе `/audio` есть `stream_url` |
 | GET | `/api/checklists/active/versions/:n` | Документ конкретной версии |
 | POST | `/api/evaluations/batch` `{conversation_ids?, only_new?}` | Поставить в очередь много диалогов → `{batch_id, queued, skipped}` (`202`) |
-| GET | `/api/evaluations/batch/:batch_id` | Прогресс: `queued / running / completed / failed / finished` |
+| GET | `/api/evaluations/batch/:batch_id` | Прогресс: `queued / running / completed / failed / cancelled / done / finished` |
+| POST | `/api/evaluations/batch/:batch_id/cancel` | Отменить ещё не начатые оценки батча (`status: cancelled`); идущая доработает |
 | GET | `/api/evaluations` `?conversation_id= ?batch_id= ?status=` | Список оценок (кратко) |
 | GET | `/api/evaluations/:id` | Полная оценка — для polling |
-| POST | `/api/evaluations/:id/retry` | Повторить упавшую оценку |
+| POST | `/api/evaluations/:id/retry` | Повторить упавшую или отменённую оценку |
 | GET | `/api/appeals/:id` | Одна апелляция |
 
-Для контрольного набора на 23-м часу: `POST /api/datasets/import {"group_id": "<выданный>"}` →
+Массовая оценка во фронте («Оценить новые», «Переоценить по vN», «Переоценить по фильтру») идёт
+через батч на бэке: очередь живёт на сервере, страница только показывает прогресс. Можно уйти в
+карточку или перезагрузить страницу — слежение подхватится (id батча в `localStorage['cqa.batch']`).
+«Остановить» отменяет ещё не начатые оценки на сервере.
+
+Контрольный набор на 23-м часу: ввести выданный `group_id` → «Импорт» → «Оценить новые».
+То же из терминала: `POST /api/datasets/import {"group_id": "<выданный>"}` →
 `POST /api/evaluations/batch {"only_new": true}` → `GET /api/evaluations/batch/:id` до `finished`.
-Это быстрее, чем кнопка «Оценить новые» во фронте (она ходит по одному диалогу).
 
 ### Отличия от «Чек-листа подключения»
 

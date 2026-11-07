@@ -41,10 +41,20 @@ def load_dataset_file(path: Path | str) -> OrganizerDataset:
         return parse_dataset(json.load(f))
 
 
+def dataset_url(api_url: str, group_id: str) -> str:
+    """Set group_id on the organizer URL, keeping its other query params (api-version, sig, ...).
+
+    The organizer gives a signed URL that already ends with `&group_id=DEV`; passing `params=`
+    to httpx would replace the whole query string and drop the signature.
+    """
+    url = httpx.URL(api_url)
+    return str(url.copy_set_param("group_id", group_id))
+
+
 async def fetch_dataset(api_url: str, group_id: str, timeout_s: float = 60.0) -> OrganizerDataset:
     async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True) as client:
         try:
-            resp = await client.get(api_url, params={"group_id": group_id})
+            resp = await client.get(dataset_url(api_url, group_id))
             resp.raise_for_status()
         except httpx.HTTPError as exc:
             raise OrganizerError(f"organizer API request failed: {exc}") from exc

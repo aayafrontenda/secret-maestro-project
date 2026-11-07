@@ -20,6 +20,21 @@ python3 -m http.server 5173
 Через `file://` не откроется: ES-модули и `fetch` требуют http-сервер.
 Сбросить мок-данные (оценки, апелляции, версии чек-листа): кнопка «Сбросить мок-данные» на странице «Диалоги».
 
+## Запуск с бэкендом
+
+```bash
+# 1. бэкенд (подробно — backend/README.md)
+cd backend && pip install -e ".[dev]" && cp .env.example .env
+python -m app.cli seed --file data/dev_dataset.json
+uvicorn app.main:app --port 8000
+
+# 2. фронт
+cd frontend && python3 -m http.server 5173
+```
+
+В `frontend/js/config.js`: `USE_MOCKS: false`, `API_BASE: 'http://localhost:8000/api'`
+(за Cloudflare — публичный адрес бэка). Контракт и статус реализации — `docs/API_CONTRACT.md`.
+
 ## Структура
 
 ```
@@ -38,7 +53,8 @@ frontend/
   js/views/appeals.js   очередь апелляций
   js/views/analytics.js аналитика и экспорт
   mocks/                DEV-набор и чек-лист по умолчанию
-docs/API_CONTRACT.md    контракт для бэкенда
+docs/API_CONTRACT.md    контракт фронт ↔ бэк
+backend/                FastAPI-сервис оценки (см. backend/README.md)
 ```
 
 ## Сценарий защиты (5 минут)

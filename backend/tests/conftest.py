@@ -17,6 +17,19 @@ def dev_dataset() -> dict:
 @pytest.fixture
 async def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[AsyncClient]:
     """App wired to a fresh temporary SQLite DB with the mock ML provider."""
+    from app.core.config import Settings
+
+    # Pin every setting to its default via env vars (they win over a developer's .env).
+    for name, field in Settings.model_fields.items():
+        default = field.default
+        monkeypatch.setenv(
+            name.upper(),
+            ""
+            if default is None
+            else str(default).lower()
+            if isinstance(default, bool)
+            else str(default),
+        )
     db_path = tmp_path / "test.db"
     monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{db_path}")
     monkeypatch.setenv("ML_PROVIDER", "mock")

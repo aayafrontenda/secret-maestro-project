@@ -126,9 +126,10 @@ Everything lives under `/api`; the request/response shapes are in
 | POST | `/evaluations` `{conversation_id}` | Evaluate with the active checklist (waits up to `EVALUATION_WAIT_S`) |
 | POST | `/evaluations/batch` `{conversation_ids?, only_new?}` | Queue many / all dialogs → `batch_id` (`202`) |
 | GET | `/evaluations/batch/{batch_id}` | Progress counters (`finished: true` when done) |
+| POST | `/evaluations/batch/{batch_id}/cancel` | Cancel the batch's not-yet-started evaluations |
 | GET | `/evaluations` | List (`?conversation_id=`, `?batch_id=`, `?status=`) |
 | GET | `/evaluations/{id}` | Full evaluation; poll while `status` is `queued` / `running` |
-| POST | `/evaluations/{id}/retry` | Re-queue a failed evaluation |
+| POST | `/evaluations/{id}/retry` | Re-queue a failed or cancelled evaluation |
 | GET/POST | `/appeals` | List (`?evaluation_id=`, `?status=open|confirmed|changed`) / dispute a criterion |
 | GET | `/appeals/{id}` | One appeal |
 | POST | `/appeals/{id}/decision` `{action, answer, reason}` | Reviewer decision; final total recalculated |
@@ -176,10 +177,11 @@ differ by ±0.01.
 |---|---|---|
 | `DATABASE_URL` | `sqlite+aiosqlite:///./data/cqa.db` | Any async SQLAlchemy URL (`postgresql+asyncpg://…` with `pip install -e ".[postgres]"`) |
 | `CORS_ORIGINS` | `*` | Comma-separated origins |
-| `ORGANIZER_API_URL` | — | GET endpoint of the organizer API (`group_id` is appended) |
+| `ORGANIZER_API_URL` | — | The signed «Открыть GET для DEV» link from the task PDF, as is; its `group_id` is replaced per request |
 | `ML_PROVIDER` | `mock` | `mock` or `http` |
 | `ML_SERVICE_URL` | — | Base URL of the ML service (`/evaluate`, `/health`) |
 | `ML_TIMEOUT_S` / `ML_MAX_RETRIES` | `180` / `2` | Per-request timeout; retries on 5xx/network errors |
+| `ML_MOCK_DELAY_S` | `0` | Mock only: seconds per evaluation, to rehearse a slow model |
 | `QUEUE_WORKERS` | `3` | Parallel evaluations against the ML service (`1` for one local GPU) |
 | `EVALUATION_WAIT_S` | `85` | How long `POST /api/evaluations` waits before returning the in-progress state |
 | `SEED_DEFAULT_CHECKLIST` | `true` | Create the PDF checklist on first start |
@@ -197,7 +199,7 @@ python -m app.cli export-checklist [--out checklist.json]
 ## Development
 
 ```bash
-pytest                 # 59 tests: scoring rules, API contract, batches/retries, appeals, ML client, failure modes
+pytest                 # 62 tests: scoring rules, API contract, batches/retries, appeals, ML client, failure modes
 ruff check . && ruff format .
 alembic revision --autogenerate -m "describe change"    # after editing app/models
 ```
