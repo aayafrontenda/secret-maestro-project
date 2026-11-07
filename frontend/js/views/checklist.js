@@ -130,7 +130,7 @@ export async function mountChecklist(root) {
         { id: id('d'), error: errFor(c.id, 'description'), hint: 'Этот текст модель получает дословно.' }),
       c.type === 'scale' && field('Ступени шкалы', h('div', { class: 'cqa-scale-ed' },
         (c.scale || []).map((s, k) => h('div', { class: 'cqa-scale-row' },
-          input({ type: 'number', class: 'cqa-input cqa-input--num', value: s.value, 'aria-label': 'Баллы ступени', oninput: e => { s.value = Number(e.target.value); change(); } }),
+          input({ type: 'number', min: 0, step: 1, class: 'cqa-input cqa-input--num', value: s.value, 'aria-label': 'Баллы ступени', oninput: e => { s.value = Number(e.target.value); change(); } }),
           input({ value: s.label, placeholder: 'Что означает эта ступень', 'aria-label': 'Описание ступени', oninput: e => { s.label = e.target.value; change(); } }),
           h('button', { class: 'cqa-iconbtn cqa-iconbtn--plain', title: 'Удалить ступень', disabled: c.scale.length <= 2, onclick: () => { c.scale.splice(k, 1); change(true); } }, icon('x', 14)))),
         h('button', { class: 'cqa-btn cqa-btn--ghost cqa-btn--sm cqa-btn--left', onclick: () => { c.scale.push({ value: 0, label: '' }); change(true); } }, icon('spark', 14), 'Добавить ступень')),

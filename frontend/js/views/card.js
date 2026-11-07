@@ -91,6 +91,11 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
         if (!a?.url) { playBtn.title = 'Прямой mp3 отдаёт бэкенд (GET /dialogs/:id/audio). Пока — внешний плеер.'; return; }
         const audio = new Audio(a.url);
         S.audio = audio;
+        // прямая SAS-ссылка не открылась — пробуем запись через бэк, затем сдаёмся на внешний плеер
+        audio.onerror = () => {
+          if (a.stream_url && audio.src !== a.stream_url) { audio.src = a.stream_url; return; }
+          playBtn.disabled = true; playBtn.title = 'Запись недоступна — откройте внешний плеер';
+        };
         playBtn.disabled = false; playBtn.title = 'Воспроизвести';
         playBtn.onclick = () => (audio.paused ? audio.play() : audio.pause());
         audio.onplay = () => fill(playBtn, icon('pause', 16));

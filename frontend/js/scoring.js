@@ -93,6 +93,7 @@ export function validateChecklist(cl) {
       if (vals.length < 2) errs.push({ id: c.id, field: 'scale', msg: `${tag}: в шкале нужно минимум 2 ступени.` });
       if (new Set(vals).size !== vals.length) errs.push({ id: c.id, field: 'scale', msg: `${tag}: ступени шкалы повторяются.` });
       if (!(Math.max(...vals) > 0)) errs.push({ id: c.id, field: 'scale', msg: `${tag}: верхняя ступень должна быть больше 0.` });
+      if (vals.some(v => !Number.isInteger(v) || v < 0)) errs.push({ id: c.id, field: 'scale', msg: `${tag}: ступени — целые числа от 0.` });
     }
   }
   return errs;

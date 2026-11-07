@@ -12,7 +12,9 @@ async function req(path, opts = {}) {
   if (!res.ok) {
     let msg = `${res.status} ${res.statusText}`;
     try { msg = (await res.json()).error || msg; } catch {}
-    throw new Error(msg);
+    const err = new Error(msg);
+    err.status = res.status;
+    throw err;
   }
   return res.status === 204 ? null : res.json();
 }
@@ -63,20 +65,47 @@ function normRow(r) {
   };
 }
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const POLL_MS = 2000;
+const POLL_LIMIT_MS = 20 * 60 * 1000;
+
+// Бэк ждёт модель до ~85 с (лимит Cloudflare ~100 с). Не успела — отдаёт оценку
+// со status queued/running, дальше опрашиваем GET /evaluations/:id.
+async function waitEvaluation(ev) {
+  const t0 = Date.now();
+  while (ev.status === 'queued' || ev.status === 'running') {
+    if (Date.now() - t0 > POLL_LIMIT_MS) throw new Error('Оценка не завершилась за 20 минут. Проверьте модель и откройте диалог позже.');
+    await sleep(POLL_MS);
+    ev = await req(`/evaluations/${ev.evaluation_id}`);
+  }
+  if (ev.status === 'failed') throw new Error(ev.error || 'Оценка не выполнена');
+  if (ev.status === 'cancelled') throw new Error('Оценка отменена');
+  return ev;
+}
+
 const httpApi = {
   importDataset: group_id => req('/datasets/import', { method: 'POST', body: { group_id } }),
   uploadDataset: (json, name) => req('/datasets/upload', { method: 'POST', body: { name, payload: json } }),
   listDialogs: () => req('/dialogs').then(rows => (rows || []).map(normRow)),
   getDialog: id => req(`/dialogs/${enc(id)}`),
-  getAudio: id => req(`/dialogs/${enc(id)}/audio`),
+  getAudio: id => req(`/dialogs/${enc(id)}/audio`)
+    .then(a => ({ ...a, stream_url: a?.url ? `${CONFIG.API_BASE}/dialogs/${enc(id)}/audio/stream` : null })),
 
   getActiveChecklist: () => req('/checklists/active'),
   listChecklistVersions: () => req('/checklists/active/versions'),
   saveChecklist: cl => req('/checklists/active', { method: 'PUT', body: cl }),
   resetChecklist: () => req('/checklists/active/reset', { method: 'POST' }),
 
-  getEvaluation: id => req(`/dialogs/${enc(id)}/evaluation`).then(normEvaluation).catch(() => null),
-  evaluate: id => req('/evaluations', { method: 'POST', body: { conversation_id: id } }).then(normEvaluation),
+  // 404 = оценки ещё нет; остальные ошибки (бэк недоступен) пробрасываем, чтобы не запускать оценку зря.
+  getEvaluation: id => req(`/dialogs/${enc(id)}/evaluation`).then(normEvaluation)
+    .catch(e => { if (e.status === 404) return null; throw e; }),
+  evaluate: id => req('/evaluations', { method: 'POST', body: { conversation_id: id } }).then(waitEvaluation).then(normEvaluation),
+
+  // Массовая оценка на бэке: переживает закрытие вкладки и обрыв соединения.
+  startBatch: conversation_ids => req('/evaluations/batch', { method: 'POST', body: { conversation_ids } }),
+  batchStatus: batch_id => req(`/evaluations/batch/${enc(batch_id)}`),
+  batchItems: batch_id => req(`/evaluations${qs({ batch_id, limit: 2000 })}`),
+  cancelBatch: batch_id => req(`/evaluations/batch/${enc(batch_id)}/cancel`, { method: 'POST' }),
 
   listAppeals: filter => req(`/appeals${qs(filter)}`),
   createAppeal: body => req('/appeals', { method: 'POST', body }),

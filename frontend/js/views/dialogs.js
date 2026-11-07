@@ -7,6 +7,7 @@ import { icon } from '../icons.js';
 import { pageLayout, pageHead, tabs, input, sideBlock, stat, emptyState, pickFile } from '../ui.js';
 
 const LANG = { RU: 'RU', KZ: 'KZ', EN: 'EN' };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 export async function mountDialogs(root) {
   const S = {
@@ -168,6 +169,7 @@ export async function mountDialogs(root) {
 
   async function runBatch(rows, label) {
     if (!rows.length || S.batch) return;
+    if (api.startBatch) return runServerBatch(rows, label);
     const queue = rows.map(r => r.conversation_id);
     const b = S.batch = { total: queue.length, done: 0, failed: 0, stop: false, label, current: new Set() };
     renderSide(); renderTable();
@@ -188,13 +190,70 @@ export async function mountDialogs(root) {
     toast(stopped ? `Остановлено: оценено ${b.done} из ${b.total}` : `Готово: оценено ${b.done}${b.failed ? `, ошибок ${b.failed}` : ''}`, { icon: icon('check', 16) });
   }
 
+  // Массовая оценка на бэке: очередь живёт на сервере, страница только следит за прогрессом.
+  // id батча храним в localStorage — после перехода в карточку или перезагрузки слежение продолжается.
+  async function runServerBatch(rows, label) {
+    S.batch = { total: rows.length, done: 0, failed: 0, stop: false, label, current: new Set() };
+    renderSide();
+    try {
+      const r = await api.startBatch(rows.map(r => r.conversation_id));
+      if (!r.queued) { S.batch = null; renderSide(); toast('Нечего оценивать', { icon: icon('check', 16) }); return; }
+      store('cqa.batch', { id: r.batch_id, label, total: r.queued });
+      await watchBatch({ id: r.batch_id, label, total: r.queued });
+    } catch (e) {
+      S.batch = null; renderSide(); renderTable();
+      toast(e.message, { icon: icon('alert', 16) });
+    }
+  }
+
+  async function watchBatch({ id, label, total }) {
+    const b = S.batch = { id, total, done: 0, failed: 0, stop: false, label, current: new Set() };
+    renderSide(); renderTable();
+    let cancelSent = false, st = null, lastRows = 0;
+    while (!b.detached) {
+      if (b.stop && !cancelSent) {
+        cancelSent = true;
+        try { await api.cancelBatch(id); } catch (e) { toast(e.message, { icon: icon('alert', 16) }); }
+      }
+      try {
+        const [s, items] = await Promise.all([api.batchStatus(id), api.batchItems(id)]);
+        st = s;
+        b.total = s.total; b.done = s.done; b.failed = s.failed;
+        b.current = new Set(items.filter(i => i.status === 'running').map(i => i.conversation_id));
+        if (s.completed !== lastRows || s.finished) { lastRows = s.completed; S.rows = await api.listDialogs(); }
+        if (!b.detached) { renderSide(); renderTable(); }
+        if (s.finished) break;
+      } catch (e) {
+        if (e.status === 404) break; // батч исчез (БД пересоздали)
+        // сеть моргнула — пробуем дальше
+      }
+      await sleep(2000);
+    }
+    if (b.detached) return; // ушли со страницы: бэк продолжает, вернёмся — подхватим
+    store('cqa.batch', null);
+    S.batch = null;
+    await refresh();
+    if (st) {
+      const msg = st.cancelled
+        ? `Остановлено: оценено ${st.completed} из ${st.total}`
+        : `Готово: оценено ${st.completed}${st.failed ? `, ошибок ${st.failed}` : ''}`;
+      toast(msg, { icon: icon(st.failed ? 'alert' : 'check', 16) });
+    }
+  }
+
   async function refresh() { await load(); renderMain(); renderSide(); }
 
   fill(L.main, h('div', { class: 'cqa-loading' }, icon('refresh', 16, 'cqa-spin'), 'Загружаем диалоги…'));
   await refresh();
+  const pending = api.startBatch && store('cqa.batch');
+  if (pending?.id) watchBatch(pending);
 
   return {
     setRole() {},
-    destroy() { if (S.batch) S.batch.stop = true; },
+    destroy() {
+      if (!S.batch) return;
+      if (S.batch.id) S.batch.detached = true; // серверный батч продолжает работать
+      else S.batch.stop = true;                // локальный (моки) — останавливаем
+    },
   };
 }
