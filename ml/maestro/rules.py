@@ -32,6 +32,17 @@ IDENTITY_REQUESTED = re.compile(
     r"жеке басыңызды растау|verify your identity|confirm your identity)",
     re.IGNORECASE,
 )
+OPERATOR_CLOSED = re.compile(
+    r"(оператор закрыл чат|чат закрыт оператором|оператор чатты жапты|agent closed the chat|"
+    r"chat closed by (the )?(operator|agent))",
+    re.IGNORECASE,
+)
+CLIENT_GONE = re.compile(
+    r"(клиент покинул чат|клиент завершил разговор|соединение с клиентом прервано|связь с клиентом прервана|"
+    r"клиентпен байланыс үзілді|клиент чаттан шықты|connection to (the )?customer lost|customer left|"
+    r"customer ended the (call|chat))",
+    re.IGNORECASE,
+)
 CONDITIONAL = re.compile(r"\b(если|егер|if)\b", re.IGNORECASE)
 QUESTION = re.compile(r"\w[^?]*\?")  # a client message with a question mark states a request
 GOODBYE = re.compile(
@@ -173,6 +184,7 @@ def c07(ctx: Context) -> Decision:
     last = ctx.facts.last_operator_id
     if last is None:
         return Decision("na", {"chat_cut_off": True}, "na_07")
+    _settle_cut_off(ctx, last)
     cut = ctx.ask("chat_cut_off")
     if cut.value:
         return Decision("na", {"chat_cut_off": True}, "na_07", _cited(cut))
@@ -191,6 +203,24 @@ def c07(ctx: Context) -> Decision:
     return Decision(
         _yes_no(answer), facts, evidence=_cited(summarized, offered, goodbye) or [last], expected_at=None if answer else last
     )
+
+
+def _settle_cut_off(ctx: Context, last_operator_id: str) -> None:
+    """System events say how the chat ended. The operator closing it is not a cut-off; the client
+    leaving or the line dropping before the operator said goodbye is."""
+    messages = ctx.transcript.messages
+    last_operator = next(m for m in messages if m.id == last_operator_id)
+    after = messages[messages.index(last_operator) + 1 :]
+    for message in after:
+        if message.role is not Role.SYSTEM:
+            continue
+        if OPERATOR_CLOSED.search(message.text):
+            ctx.settle("chat_cut_off", False, message.id, "the operator closed the chat")
+            return
+        if CLIENT_GONE.search(message.text):
+            said_goodbye = bool(GOODBYE.search(last_operator.text))
+            ctx.settle("chat_cut_off", not said_goodbye, message.id, "the client left or the line dropped")
+            return
 
 
 def c08(ctx: Context) -> Decision:

@@ -11,7 +11,7 @@ from typing import Any, Protocol
 
 import httpx
 
-# On 19 hand-labelled DEV dialogs: qwen3.5:9b agreed with the labels on 80.3% of answers at
+# On 19 hand-labelled DEV dialogs: qwen3.5:9b agreed with the labels on 82.2% of answers at
 # about 24 s per dialog; qwen3.5:4b on 71.1% at about 14 s (RTX 4070 Laptop, 8 GB).
 DEFAULT_MODEL = "qwen3.5:9b"
 MAX_NUM_CTX = 32768
@@ -149,8 +149,9 @@ class OllamaClient:
 
     def complete(self, system: str, user: str, schema: dict[str, Any]) -> LLMResponse:
         started = time.perf_counter()
-        # Start from a window sized to the prompt (about 3 characters per token).
-        estimate = (len(system) + len(user)) // 3 + self.num_predict + 256
+        # Start from a window sized to the prompt. Russian and Kazakh text runs at about 2 characters
+        # per token for qwen3.5 (measured: 13,621 characters -> 6,847 tokens).
+        estimate = (len(system) + len(user)) // 2 + self.num_predict + 256
         num_ctx = min(max(self.num_ctx, estimate), MAX_NUM_CTX)
         while True:
             data = self._request(system, user, schema, num_ctx)
@@ -163,6 +164,9 @@ class OllamaClient:
             num_ctx = min(num_ctx * 2, MAX_NUM_CTX)
         if truncated:
             raise LLMOutputError(f"prompt does not fit into {MAX_NUM_CTX} tokens of context")
+        # Ollama reloads the model whenever num_ctx changes, so keep a window once it has grown
+        # instead of switching back and forth between dialogs of different length.
+        self.num_ctx = max(self.num_ctx, num_ctx)
         if data.get("done_reason") == "length":
             raise LLMOutputError("response was cut off by the token limit")
         return LLMResponse(

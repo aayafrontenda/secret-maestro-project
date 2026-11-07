@@ -116,6 +116,31 @@ def test_hidden_name_in_a_call_counts_as_introduction():
     assert result.answer == "yes"
 
 
+def _closing(transcript_tail):
+    transcript = TRANSCRIPT[:4] + transcript_tail
+    llm = FakeLLM({**ANSWERS, "chat_cut_off": ("M5", True)})
+    req = EvaluateRequest(conversation_id="x", transcript=transcript, criteria=[CHECKLIST[6]])
+    return evaluate(req, llm).results[0], llm
+
+
+def test_operator_closing_the_chat_is_not_a_cut_off():
+    result, llm = _closing([
+        {"index": 4, "timestamp": "01:28", "speaker": "client", "text": "Нет, спасибо."},
+        {"index": 5, "timestamp": "02:00", "speaker": "system", "text": "Оператор закрыл чат."},
+    ])
+    assert "chat_cut_off" not in llm.calls
+    assert result.answer == "no"  # no goodbye, no summary
+
+
+def test_client_leaving_before_a_goodbye_is_a_cut_off():
+    result, llm = _closing([
+        {"index": 4, "timestamp": "01:28", "speaker": "client", "text": "Жақсы."},
+        {"index": 5, "timestamp": "02:00", "speaker": "system", "text": "Клиентпен байланыс үзілді."},
+    ])
+    assert "chat_cut_off" not in llm.calls
+    assert result.answer == "na"
+
+
 def test_reported_verification_means_identification_was_required():
     transcript = TRANSCRIPT[:4] + [
         {"index": 4, "timestamp": "01:20", "speaker": "system", "text": "Customer identity verified."},

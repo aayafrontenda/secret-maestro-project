@@ -21,7 +21,9 @@ from .facts import ChatFacts, render_facts
 from .llm import LLMClient, LLMOutputError, extract_json
 from .schemas import AttemptTrace, Message, Role, Transcript
 
-Scope = Literal["first_operator", "opening", "operator", "operator_tail", "client", "people", "all"]
+Scope = Literal[
+    "first_operator", "last_operator", "opening", "operator", "operator_tail", "client", "people", "all"
+]
 Cite = Literal["any", "operator", "client"]
 
 SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text(encoding="utf-8")
@@ -36,6 +38,7 @@ CALL_NOTE = (
 
 SCOPE_INTRO: dict[Scope, str] = {
     "first_operator": "The operator's FIRST message in the chat",
+    "last_operator": "The operator's LAST message in the chat",
     "opening": "The start of the chat, up to and including the operator's first message",
     "operator": "All messages written by the OPERATOR",
     "operator_tail": "The operator's LAST messages in the chat",
@@ -168,13 +171,22 @@ PROBES: dict[str, Probe] = {
             "replying mid-dialogue and the chat was closed, or the connection dropped? If the operator answered and "
             "simply did not say goodbye, answer false.",
         ),
-        Probe("summarized", "operator_tail", "Does the operator sum up the outcome of the conversation?"),
+        Probe(
+            "summarized",
+            "last_operator",
+            "Does this closing message sum up the outcome or the next step of the conversation? Examples: "
+            "'Your payment is being processed, we will reply in this chat', 'Я передал вопрос специалистам', "
+            "'We'll follow up here about the transfer'. 'You're welcome', 'Пожалуйста', thanks and good wishes "
+            "alone are NOT a summary.",
+        ),
         Probe(
             "offered_help",
             "operator_tail",
             "Does the operator offer further help or invite the client to come back with questions? Examples: "
             "'Can I help with anything else?', 'Обращайтесь', 'Пишите, если будут вопросы', "
-            "'Сұрақтарыңыз болса, жазыңыз', 'Write to us if you have questions'.",
+            "'Сұрақтарыңыз болса, жазыңыз', 'Write to us if you have questions'. 'You're welcome', "
+            "'Пожалуйста', thanks and good wishes such as 'Хорошего вечера', 'Take care' or "
+            "'Күніңіз сәтті өтсін' are NOT an offer of further help.",
         ),
         Probe("said_goodbye", "operator_tail", "Does the operator say goodbye or wish the client well?"),
         # 08 Gross violations
@@ -260,6 +272,8 @@ class Context:
         operator = [m for m in messages if m.role is Role.OPERATOR]
         if scope == "first_operator":
             return operator[:1]
+        if scope == "last_operator":
+            return operator[-1:]
         if scope == "opening":
             if not operator:
                 return []

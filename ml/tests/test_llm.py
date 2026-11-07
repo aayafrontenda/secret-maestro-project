@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -32,6 +34,37 @@ def test_connection_errors_are_retried_then_reported(monkeypatch):
     client = client_with([error, error, error], monkeypatch)
     with pytest.raises(LLMUnavailable, match="after 3 attempts"):
         client.complete("s", "u", {})
+
+
+def test_a_prompt_that_fills_the_window_is_resent_with_a_larger_one(monkeypatch):
+    windows = []
+
+    def handler(request):
+        num_ctx = json.loads(request.content)["options"]["num_ctx"]
+        windows.append(num_ctx)
+        # Simulate Ollama cutting the prompt to fit a small window.
+        prompt_tokens = 9000 if num_ctx > 9000 else num_ctx - 10
+        return httpx.Response(200, json={**OK, "prompt_eval_count": prompt_tokens})
+
+    client = OllamaClient(model="m", num_ctx=8192)
+    client.http = httpx.Client(transport=httpx.MockTransport(handler))
+    client.complete("s", "u", {})
+    assert windows == [8192, 16384]
+    client.complete("s", "u", {})
+    assert windows[-1] == 16384  # the larger window is kept, so the model is not reloaded
+
+
+def test_window_is_sized_for_cyrillic_text():
+    windows = []
+
+    def handler(request):
+        windows.append(json.loads(request.content)["options"]["num_ctx"])
+        return httpx.Response(200, json=OK)
+
+    client = OllamaClient(model="m", num_ctx=8192)
+    client.http = httpx.Client(transport=httpx.MockTransport(handler))
+    client.complete("s", "я" * 30000, {})
+    assert windows[0] >= 15000
 
 
 def test_client_errors_are_not_retried(monkeypatch):

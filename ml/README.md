@@ -54,7 +54,7 @@ uv run python eval/run_dev.py ../backend/data/dev_dataset.json --out runs/dev
 | Model | Agreement with our labels | Seconds per dialog |
 |---|---|---|
 | `qwen3.5:4b` | 71.1% | 14 |
-| `qwen3.5:9b` (default) | 80.3% | 24 |
+| `qwen3.5:9b` (default) | 82.2% | 24 |
 
 The 9B time is with `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` set for Ollama.
 
