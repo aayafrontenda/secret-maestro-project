@@ -31,7 +31,15 @@ class FakeLLM:
         self.thinks.append(think)
         if "\nRule: " in user:  # the generic evaluator
             self.calls.append("generic")
-            content = {"why": "scripted generic", **self.answers["generic"]}
+            props = schema["properties"]
+            if "conditions" in props:  # decomposed mode: the plan
+                base = self.answers["generic_plan"]
+            elif props.get("answer", {}).get("type") == "boolean":  # decomposed mode: one condition
+                check = self.answers["generic_check"]
+                base = check(user) if callable(check) else check
+            else:
+                base = self.answers["generic"]
+            content = {"why": "scripted generic", **base}
             if "na_condition_holds" in schema["properties"]:  # the applicability step
                 content.setdefault("na_condition_holds", False)
             return LLMResponse(content=json.dumps(content, ensure_ascii=False), duration_ms=1)

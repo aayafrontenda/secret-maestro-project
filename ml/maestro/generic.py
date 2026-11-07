@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 
 from .probes import Context, render_messages
@@ -135,6 +136,13 @@ def evaluate_generic(
         if data.get("na_condition_holds") is True:
             evidence = [i for i in data.get("evidence") or [] if i in ids]
             return GenericAnswer(answer="na", evidence=evidence, explanation=str(data.get("explanation", "")).strip())
+
+    if os.getenv("MAESTRO_GENERIC_MODE", "single").strip().lower() == "decompose":
+        from .decompose import evaluate_decomposed
+
+        decomposed = evaluate_decomposed(ctx, criterion, language, chat, [m.id for m in shown])
+        if decomposed is not None:
+            return decomposed
 
     if criterion.answer_type == "scale":
         values: list[str | int] = [value for value, _ in criterion.scale]
