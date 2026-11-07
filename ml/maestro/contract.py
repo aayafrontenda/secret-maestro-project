@@ -157,7 +157,7 @@ def _standard_result(ctx: Context, criterion: Criterion, preset_id: str, languag
     )
 
 
-def _generic_result(ctx: Context, criterion: Criterion, language: str) -> CriterionResult:
+def _generic_result(ctx: Context, criterion: Criterion, language: str, others: list[str] | None = None) -> CriterionResult:
     labels = {int(s["value"]): str(s.get("label", "")) for s in criterion.scale_steps or [] if "value" in s}
     spec = GenericCriterion(
         key=criterion.code,
@@ -168,6 +168,7 @@ def _generic_result(ctx: Context, criterion: Criterion, language: str) -> Criter
         na_rule=criterion.na_rule,
         is_flag=criterion.is_flag,
         scale=[(v, labels.get(v, "")) for v in _scale_values(criterion)],
+        others=others or [],
     )
     result = evaluate_generic(ctx, spec, language)
     answer = _fit_answer(result.answer, criterion)
@@ -202,7 +203,8 @@ def evaluate(request: EvaluateRequest, llm: LLMClient) -> EvaluateResponse:
         if preset_id is not None:
             results.append(_standard_result(ctx, criterion, preset_id, language))
         else:
-            results.append(_generic_result(ctx, criterion, language))
+            others = [c.title for c in request.criteria if c.code != criterion.code and c.title]
+            results.append(_generic_result(ctx, criterion, language, others))
 
     traces = [t for attempts in ctx.traces.values() for t in attempts]
     return EvaluateResponse(

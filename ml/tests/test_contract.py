@@ -163,3 +163,22 @@ def test_harmless_variants_keep_the_built_in_logic():
         "Да — выявлено оскорбление клиента, предложение платной услуги в обход компании или раскрытие "
         "конфиденциальной информации. Нет — ни одно из трёх не выявлено.", "yes_no", True, []) == "08"
     assert match_standard("да - оператор учел известные детали и уточнил недостающее до ответа", "yes_no", False, []) == "02"
+
+
+def test_generic_criterion_is_told_what_not_to_judge():
+    seen = []
+
+    class Recording(FakeLLM):
+        def complete(self, system, user, schema, think=None):
+            if "\nRule: " in user:
+                seen.append((system, user))
+            return super().complete(system, user, schema, think)
+
+    checklist = [dict(c) for c in CHECKLIST]
+    checklist[4] = {**checklist[4], "title": "Извинение", "rule": "Да — оператор извинился за неудобство."}
+    llm = Recording({**ANSWERS, "generic": {"answer": "yes", "evidence": [], "explanation": "ok"}})
+    evaluate(request([Criterion(**c) for c in checklist]), llm)
+    system, user = seen[0]
+    assert "Judge ONLY what this criterion's rule asks" in system
+    assert "Эмпатия" not in user  # the replaced criterion is gone
+    assert "Корректная и полная консультация" in user and "Грубые ошибки" in user

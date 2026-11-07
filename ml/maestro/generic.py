@@ -16,6 +16,12 @@ Rules:
 3. Only the operator is evaluated. Bot messages and system events are context. A system message counts as evidence of what it reports.
 4. "no" means the action was needed but the operator skipped it or did it wrong. "na" means the criterion does not apply under its N/A condition. Use "na" only when that condition holds.
 5. Ignore response speed, tags and attachments.
+6. Judge ONLY what this criterion's rule asks. Correctness or completeness of the answer, clarity, gross violations
+   and the other criteria listed in the prompt are scored separately: do not let them change this answer unless the
+   rule itself names them.
+7. A requirement met at a basic level is met. Do not demand more than the rule says: a short, plain or businesslike
+   tone is not a failure, and missing extra warmth is not a failure unless the rule asks for it. Answer "no" only when
+   the chat shows the operator clearly did not do what the rule requires.
 
 Reply in JSON with the fields in this order:
 - "why": two or three sentences in English: what the criterion requires and what the chat shows.
@@ -34,6 +40,7 @@ class GenericCriterion:
     na_rule: str | None = None
     is_flag: bool = False
     scale: list[tuple[int, str]] = field(default_factory=list)  # (value, label), highest first
+    others: list[str] = field(default_factory=list)  # titles of the other criteria in the checklist
 
 
 @dataclass
@@ -45,6 +52,8 @@ class GenericAnswer:
 
 def _describe(criterion: GenericCriterion) -> str:
     lines = [f"Criterion: {criterion.title}", f"Rule: {criterion.rule}"]
+    if criterion.others:
+        lines.append("Scored separately, do NOT judge them here: " + "; ".join(criterion.others) + ".")
     if criterion.is_flag:
         lines.append(
             'This criterion flags a violation: answer "yes" only if the violation is present, and point to the '
