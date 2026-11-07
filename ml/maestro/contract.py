@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import time
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -72,12 +73,26 @@ class CriterionResult(BaseModel):
     method: Literal["standard", "generic"] = Field(description="Built-in logic or the generic evaluator")
     standard_id: str | None = Field(default=None, description="Which standard criterion was recognised")
     facts: dict[str, bool] = Field(default_factory=dict, description="Answers to the narrow questions")
+    review: "Review | None" = Field(default=None, description="Second-opinion check, when a check model is configured")
+
+
+class Review(BaseModel):
+    """Cascade check: the same criterion scored independently by a second model."""
+
+    agrees: bool = Field(description="Both models gave the same answer")
+    needs_review: bool = Field(description="The models disagree: send this criterion to a supervisor")
+    second_answer: Literal["yes", "no", "na"] | int
+    second_model: str
+
+
+CriterionResult.model_rebuild()
 
 
 class ModelInfo(BaseModel):
     provider: str = "ollama"
     name: str
     generic_name: str | None = Field(default=None, description="Model used for criteria without built-in rules, if different")
+    check_name: str | None = Field(default=None, description="Second model used for the cascade check, if configured")
 
 
 class Usage(BaseModel):
@@ -194,14 +209,10 @@ def _generic_result(
     )
 
 
-def evaluate(request: EvaluateRequest, llm: LLMClient, generic_llm: LLMClient | None = None) -> EvaluateResponse:
-    """Answer every criterion of the request. Raises LLMUnavailable or LLMOutputError on failure.
-
-    `generic_llm`, if given, scores the criteria without built-in rules (usually a stronger model);
-    the built-in criteria keep using `llm`.
-    """
-    started = time.perf_counter()
-    language = LANGUAGES.get(request.language.strip().upper(), "ru")
+def _answer_all(
+    request: EvaluateRequest, llm: LLMClient, generic_llm: LLMClient | None, language: str
+) -> tuple[list[CriterionResult], list]:
+    """One full pass over the checklist with one model (and its generic model). Returns results and traces."""
     transcript = to_transcript(request)
     guidelines = [g.strip() for g in request.guidelines if g and g.strip()]
     ctx = Context(
@@ -225,12 +236,48 @@ def evaluate(request: EvaluateRequest, llm: LLMClient, generic_llm: LLMClient | 
         else:
             others = [c.title for c in request.criteria if c.code != criterion.code and c.title]
             results.append(_generic_result(gctx, criterion, language, guidelines, others))
+    return results, [t for attempts in ctx.traces.values() for t in attempts]
 
-    traces = [t for attempts in ctx.traces.values() for t in attempts]
+
+def evaluate(
+    request: EvaluateRequest,
+    llm: LLMClient,
+    generic_llm: LLMClient | None = None,
+    check_llm: LLMClient | None = None,
+) -> EvaluateResponse:
+    """Answer every criterion of the request. Raises LLMUnavailable or LLMOutputError on failure.
+
+    `generic_llm`, if given, scores the criteria without built-in rules (usually a stronger model);
+    the built-in criteria keep using `llm`.
+    `check_llm`, if given, scores the whole checklist again in parallel; every criterion gets a
+    `review` saying whether the two models agree. A disagreement marks it for a supervisor.
+    """
+    started = time.perf_counter()
+    language = LANGUAGES.get(request.language.strip().upper(), "ru")
+    if check_llm is None:
+        results, traces = _answer_all(request, llm, generic_llm, language)
+    else:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            main = pool.submit(_answer_all, request, llm, generic_llm, language)
+            check = pool.submit(_answer_all, request, check_llm, None, language)
+            results, traces = main.result()
+            second, check_traces = check.result()
+        traces = traces + check_traces
+        by_code = {r.code: r for r in second}
+        for r in results:
+            other = by_code.get(r.code)
+            if other is not None:
+                agrees = r.answer == other.answer
+                r.review = Review(agrees=agrees, needs_review=not agrees, second_answer=other.answer, second_model=check_llm.model)
+
     return EvaluateResponse(
         conversation_id=request.conversation_id,
         results=results,
-        model=ModelInfo(name=llm.model, generic_name=generic_llm.model if generic_llm is not None else None),
+        model=ModelInfo(
+            name=llm.model,
+            generic_name=generic_llm.model if generic_llm is not None else None,
+            check_name=check_llm.model if check_llm is not None else None,
+        ),
         usage=Usage(
             prompt_tokens=sum(t.prompt_tokens or 0 for t in traces),
             completion_tokens=sum(t.completion_tokens or 0 for t in traces),

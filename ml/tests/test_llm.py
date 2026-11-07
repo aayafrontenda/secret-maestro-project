@@ -103,3 +103,19 @@ def test_per_call_think_overrides_the_client_and_raises_the_token_limit():
     client.complete("s", "u", {}, think=False)
     assert [p["think"] for p in sent] == [False, True, False]
     assert [p["options"]["num_predict"] for p in sent] == [384, 4096, 384]
+
+
+def test_openai_payment_required_is_not_retried():
+    from maestro.llm import OpenAIClient
+
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(402, json=[{"error": {"code": 402, "message": "Your prepayment credits are depleted."}}])
+
+    client = OpenAIClient(model="m", api_key="k")
+    client.http = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(LLMUnavailable, match="402"):
+        client.complete("s", "u", {})
+    assert len(calls) == 1

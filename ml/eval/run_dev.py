@@ -67,6 +67,9 @@ def main() -> int:
     parser.add_argument("--think-on", help="thinking only for these criteria/probes, e.g. 04,06,07 (sets MAESTRO_THINK_ON)")
     parser.add_argument("--generic-model", help="separate model for criteria without built-in rules (OpenAI-compatible)")
     parser.add_argument("--generic-url", help="API URL for --generic-model (default: MAESTRO_OPENAI_URL)")
+    parser.add_argument("--check-model", help="second model for the cascade check (OpenAI-compatible)")
+    parser.add_argument("--check-url", help="API URL for --check-model (default: MAESTRO_OPENAI_URL)")
+    parser.add_argument("--check-key-env", default="MAESTRO_CHECK_API_KEY", help="env var with the key for --check-model")
     parser.add_argument("--workers", type=int, default=1, help="dialogs scored in parallel (cloud backends)")
     parser.add_argument("--price-in", type=float, help="USD per 1M prompt tokens, for the cost line")
     parser.add_argument("--price-out", type=float, help="USD per 1M completion tokens, for the cost line")
@@ -101,6 +104,12 @@ def main() -> int:
     else:
         llm = OllamaClient.from_env(model=args.model)
     generic_llm = None
+    check_llm = None
+    if args.check_model:
+        import os
+
+        check_llm = OpenAIClient(model=args.check_model, url=args.check_url or os.getenv("MAESTRO_OPENAI_URL", "https://api.openai.com/v1"),
+                                 api_key=os.getenv(args.check_key_env) or os.getenv("OPENAI_API_KEY", ""))
     if args.generic_model:
         generic_llm = OpenAIClient.from_env(model=args.generic_model, url=args.generic_url)
     status = llm.health()
@@ -126,7 +135,7 @@ def main() -> int:
     def run_one(record: dict):
         request = to_request(record, criteria, guidelines)
         try:
-            return request, evaluate(request, llm, generic_llm), None
+            return request, evaluate(request, llm, generic_llm, check_llm), None
         except (LLMOutputError, LLMUnavailable) as exc:
             return request, None, exc
 
@@ -150,7 +159,8 @@ def main() -> int:
         expected = labels.get(request.conversation_id)
         if expected:
             got = {r.code: r.answer for r in response.results}
-            comparison.add(request.conversation_id, request.language, expected, got)
+            reviews = {r.code: r.review for r in response.results}
+            comparison.add(request.conversation_id, request.language, expected, got, reviews)
             misses = [f"{c}: want {expected[c]} got {got.get(c)}" for c in expected if expected[c] != got.get(c)]
             compact = "; ".join(misses) or "all match"
         print(
@@ -193,12 +203,16 @@ class Comparison:
         self.hits: dict[str, list[bool]] = defaultdict(list)
         self.by_language: dict[str, list[bool]] = defaultdict(list)
         self.score_errors: list[float] = []
+        self.cascade: list[tuple[bool, bool, bool]] = []  # (models agree, main right, one of the two right)
 
-    def add(self, conversation_id: str, language: str, expected: dict, got: dict) -> None:
+    def add(self, conversation_id: str, language: str, expected: dict, got: dict, reviews: dict | None = None) -> None:
         for code, want in expected.items():
             ok = got.get(code) == want
             self.hits[code].append(ok)
             self.by_language[language].append(ok)
+            review = (reviews or {}).get(code)
+            if review is not None:
+                self.cascade.append((review.agrees, ok, ok or review.second_answer == want))
         want_score, got_score = final_score(expected), final_score(got)
         if want_score is not None and got_score is not None:
             self.score_errors.append(abs(want_score - got_score))
@@ -215,6 +229,15 @@ class Comparison:
             print(f"  {language}: {sum(values) / len(values):.1%}")
         if self.score_errors:
             print(f"  final score mean abs error: {statistics.mean(self.score_errors):.2f}")
+        if self.cascade:
+            n = len(self.cascade)
+            agreed = [c for c in self.cascade if c[0]]
+            right_agreed = sum(c[1] for c in agreed)
+            print(
+                f"cascade: models agree on {len(agreed)}/{n} = {len(agreed) / n:.1%} of answers, accuracy there "
+                f"{right_agreed / max(1, len(agreed)):.1%}; to a supervisor {n - len(agreed)} ({(n - len(agreed)) / n:.1%}); "
+                f"with the supervisor fixing those: {(right_agreed + n - len(agreed)) / n:.1%}"
+            )
 
 
 def final_score(answers: dict) -> float | None:

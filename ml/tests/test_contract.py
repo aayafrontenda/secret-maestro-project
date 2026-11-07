@@ -301,3 +301,21 @@ def test_generic_criteria_can_use_a_separate_model():
     assert "generic" not in main.calls and main.calls
     assert response.model.generic_name == "strong"
     assert response.usage.calls == len(main.calls) + len(strong.calls)
+
+
+
+def test_cascade_check_flags_disagreements():
+    main = FakeLLM(ANSWERS)
+    check = FakeLLM({**ANSWERS, "consultation_level": ("M3", 10)})  # disagrees on 04 only
+    check.model = "checker"
+    response = evaluate(request(), main, check_llm=check)
+    by_code = {r.code: r for r in response.results}
+    assert by_code["c4"].review.needs_review and by_code["c4"].review.second_answer == 10
+    assert all(not r.review.needs_review for code, r in by_code.items() if code != "c4")
+    assert response.model.check_name == "checker"
+    assert response.usage.calls == len(main.calls) + len(check.calls)
+
+
+def test_no_check_model_means_no_review():
+    response = evaluate(request(), FakeLLM(ANSWERS))
+    assert all(r.review is None for r in response.results)

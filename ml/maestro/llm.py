@@ -167,7 +167,7 @@ class OpenAIClient:
                         self._unsupported.add(param)
                         continue
                     raise LLMUnavailable(f"OpenAI rejected the request (400): {response.text[:300]}")
-                if response.status_code in (401, 403, 404):
+                if response.status_code in (401, 402, 403, 404):  # 402: credits depleted, retrying will not help
                     raise LLMUnavailable(f"OpenAI rejected the request ({response.status_code}): {response.text[:300]}")
                 if response.status_code < 400:
                     data = response.json()
@@ -339,4 +339,23 @@ def generic_client_from_env() -> "LLMClient | None":
         api_key=os.getenv("MAESTRO_GENERIC_API_KEY") or os.getenv("OPENAI_API_KEY", ""),
         url=os.getenv("MAESTRO_GENERIC_URL") or os.getenv("MAESTRO_OPENAI_URL", "https://api.openai.com/v1"),
         reasoning_effort=os.getenv("MAESTRO_GENERIC_REASONING") or None,
+    )
+
+
+def check_client_from_env() -> "LLMClient | None":
+    """Optional second model for the cascade check (MAESTRO_CHECK_MODEL). Unset: no check.
+
+    MAESTRO_CHECK_BACKEND=openai (default, any OpenAI-compatible API) or ollama;
+    MAESTRO_CHECK_URL / MAESTRO_CHECK_API_KEY default to the OpenAI settings.
+    """
+    model = os.getenv("MAESTRO_CHECK_MODEL")
+    if not model:
+        return None
+    if os.getenv("MAESTRO_CHECK_BACKEND", "openai").lower() == "ollama":
+        return OllamaClient.from_env(model=model, url=os.getenv("MAESTRO_CHECK_URL") or None)
+    return OpenAIClient(
+        model=model,
+        api_key=os.getenv("MAESTRO_CHECK_API_KEY") or os.getenv("OPENAI_API_KEY", ""),
+        url=os.getenv("MAESTRO_CHECK_URL") or os.getenv("MAESTRO_OPENAI_URL", "https://api.openai.com/v1"),
+        reasoning_effort=os.getenv("MAESTRO_CHECK_REASONING") or None,
     )
