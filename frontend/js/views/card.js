@@ -502,6 +502,10 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
         h('i', { class: 'cqa-dot' }),
         h('span', { class: 'cqa-crit-name' }, c.name),
         appeal && h('span', { class: `cqa-appeal-mark cqa-appeal-mark--${appeal.status}`, title: 'Есть апелляция' }, icon('gavel', 12)),
+        r?.needs_review && !appeal && h('span', {
+          class: 'cqa-review-mark',
+          title: `Модели разошлись: ${r.second_opinion?.model || 'вторая модель'} ответила «${answerText(c, r.second_opinion?.answer)}». Нужна проверка.`,
+        }, icon('scan', 12)),
         answerBadge(c, final, was),
         c.type !== 'flag' && h('span', { class: 'cqa-crit-pts cqa-num' }, row?.na ? '—' : fmt(row?.points, 1))));
     }
@@ -530,6 +534,11 @@ export async function mountCard(root, { id, role, onNavigate, crit }) {
           r.confidence != null && h('span', { class: `cqa-conf ${r.confidence < 0.7 ? 'is-low' : ''}`, title: 'Уверенность модели' },
             h('i', { style: { '--v': `${Math.round(r.confidence * 100)}%` } }), `уверенность ${Math.round(r.confidence * 100)}%`),
           formula && h('span', { class: 'cqa-formula cqa-num' }, formula)),
+        r.needs_review && h('div', { class: 'cqa-review-box', role: 'note' },
+          icon('scan', 14),
+          h('span', null, h('b', null, 'Нужна проверка. '),
+            `Вторая модель (${r.second_opinion?.model || '—'}) ответила «${answerText(c, r.second_opinion?.answer)}», `
+            + `основная — «${answerText(c, r.answer)}». Посмотрите доказательства и, если нужно, измените оценку.`)),
         S.role === 'operator' && !appeal && !S.drafts[c.id] && h('div', { class: 'cqa-row' },
           h('button', { class: 'cqa-btn cqa-btn--outline cqa-btn--sm', onclick: () => { S.drafts[c.id] = { comment: '' }; renderCrits(); applyHighlights(); focusDraft(c.id); } },
             icon('flag', 14), 'Оспорить оценку')),

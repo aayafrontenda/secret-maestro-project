@@ -146,6 +146,10 @@ Rules:
 - `evidence`: transcript indexes that support the verdict. For a **missed** action, give
   `checked_range` (where the action was expected) instead of, or in addition to, evidence.
 - `na_reason`: required when `answer` is `"na"` — which N/A condition from `na_rule` applies.
+- `review` (optional, cascade check): present when the ML service runs a second model
+  (`MAESTRO_CHECK_MODEL`). `{"agrees": bool, "needs_review": bool, "second_answer": ..., "second_model": "..."}`.
+  The backend stores it, returns `needs_review` and `second_opinion` per criterion and adds a `disputed`
+  reason to the attention queue. On 312 labelled answers two models agreed on 87% with 95.6% accuracy.
 - `model` and `usage` are optional but wanted: the organizers ask for the model name and the
   approximate cost of one evaluation.
 

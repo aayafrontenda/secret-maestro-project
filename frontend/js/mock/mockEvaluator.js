@@ -103,14 +103,22 @@ export function mockEvaluate(dialog, checklist) {
       evidence: firstOp ? [ev(firstOp)] : [],
     };
     if (r.answer === 'na' && !c.na_allowed) r = { ...r, answer: 'no', explanation: r.na_reason };
+    const confidence = conf(dialog.conversation_id + c.id);
+    // Mock of the cascade check: a second model "disagrees" where the mock is unsure.
+    const disputed = confidence < 0.68 && c.type !== 'flag';
+    const other = c.type === 'scale'
+      ? ([...c.scale].map(s => s.value).sort((a, b) => b - a).find(v => v !== r.answer) ?? r.answer)
+      : r.answer === 'yes' ? 'no' : 'yes';
     return {
+      needs_review: disputed,
+      second_opinion: disputed ? { answer: other, model: 'mock-check' } : null,
       criterion_id: c.id,
       answer: r.answer,
       explanation: r.explanation || null,
       na_reason: r.na_reason || null,
       evidence: r.evidence || [],
       checked_range: r.checked_range || null,
-      confidence: conf(dialog.conversation_id + c.id),
+      confidence,
     };
   });
 

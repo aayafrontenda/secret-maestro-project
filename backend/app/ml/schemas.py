@@ -46,6 +46,15 @@ class MLRange(BaseModel):
     to_index: int = Field(ge=0)
 
 
+class MLReview(BaseModel):
+    """Cascade check from the ML service: a second model scored the same criterion."""
+
+    agrees: bool
+    needs_review: bool = Field(description="The two models disagree: a supervisor should look")
+    second_answer: str | int | float | None = None
+    second_model: str | None = None
+
+
 class MLCriterionResult(BaseModel):
     code: str
     # "yes" / "no" / "na" / number; other spellings ("Да", "N/A", "15") are normalised.
@@ -58,11 +67,13 @@ class MLCriterionResult(BaseModel):
         default=None, description="Transcript span inspected when an expected action is missing"
     )
     na_reason: str | None = None
+    review: MLReview | None = Field(default=None, description="Present when the ML service runs a check model")
 
 
 class MLModelInfo(BaseModel):
     provider: str = "unknown"
     name: str = "unknown"
+    check_name: str | None = None
 
 
 class MLUsage(BaseModel):

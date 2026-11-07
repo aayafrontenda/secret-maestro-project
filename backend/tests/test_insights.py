@@ -288,3 +288,35 @@ async def test_review_workflow(seeded: AsyncClient):
     # A re-evaluation starts unreviewed.
     await _evaluate(seeded, "p1-ru-002")
     assert (await _row(seeded, "p1-ru-002"))["review_status"] == "to_review"
+
+
+class CheckedML(ScriptedML):
+    """Full marks, but the check model disagrees on the first scale criterion."""
+
+    async def evaluate(self, request: MLEvaluateRequest) -> MLEvaluateResponse:
+        from app.ml.schemas import MLReview
+
+        response = await super().evaluate(request)
+        scale = next(c.code for c in request.criteria if c.answer_type == "scale")
+        for r in response.results:
+            disputed = r.code == scale
+            r.review = MLReview(
+                agrees=not disputed, needs_review=disputed,
+                second_answer=0 if disputed else r.answer, second_model="checker",
+            )
+        return response
+
+
+async def test_disputed_criteria_reach_the_card_and_the_attention_queue(seeded: AsyncClient):
+    _use(seeded, CheckedML({}))
+    ev = await _evaluate(seeded, "p1-ru-001")
+    card = (await seeded.get(f"{API}/dialogs/p1-ru-001/evaluation")).json()
+    flagged = [r for r in card["results"] if r["needs_review"]]
+    assert len(flagged) == 1 and flagged[0]["second_opinion"] == {"answer": 0, "model": "checker"}
+
+    data = (await seeded.get(f"{API}/attention")).json()
+    item = next(i for i in data["items"] if i["conversation_id"] == "p1-ru-001")
+    disputed = next(r for r in item["reasons"] if r["kind"] == "disputed")
+    assert disputed["count"] == 1 and disputed["criteria"][0]["second_answer"] == 0
+    assert data["counts"]["disputed"] >= 1
+    assert ev["evaluation_id"]

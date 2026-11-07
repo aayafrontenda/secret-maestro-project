@@ -14,8 +14,8 @@ from app.models import Appeal, Dialog, Evaluation
 from app.models.appeal import AppealStatus
 from app.models.evaluation import EvaluationStatus
 
-KINDS = ("grave", "failed", "appeal", "low_score", "model_fix")
-WEIGHT = {"grave": 1000, "failed": 500, "appeal": 300, "low_score": 100, "model_fix": 50}
+KINDS = ("grave", "failed", "appeal", "disputed", "low_score", "model_fix")
+WEIGHT = {"grave": 1000, "failed": 500, "appeal": 300, "disputed": 200, "low_score": 100, "model_fix": 50}
 
 
 def _ratio(points: float | None, weight: float | None) -> float:
@@ -44,6 +44,24 @@ def _reasons(ev: Evaluation, pending: int, threshold: float) -> list[dict[str, A
             )
     if pending:
         reasons.append({"kind": "appeal", "count": pending})
+    disputed = [r for r in ev.results if r.review and r.review.get("needs_review")]
+    if disputed:
+        reasons.append(
+            {
+                "kind": "disputed",
+                "count": len(disputed),
+                "criteria": [
+                    {
+                        "criterion_id": r.criterion_code,
+                        "criterion_name": r.criterion_title,
+                        "answer": r.answer,
+                        "second_answer": r.review.get("second_answer"),
+                        "second_model": r.review.get("second_model"),
+                    }
+                    for r in disputed
+                ],
+            }
+        )
     if ev.final_total is not None and ev.final_total < threshold:
         scored = [
             r

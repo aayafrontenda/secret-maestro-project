@@ -100,6 +100,13 @@ def evaluation(ev: Evaluation) -> dict[str, Any]:
             "final_points": r.final_score,
             "effective_weight": r.effective_weight,
             "normalization_note": r.normalization_note,
+            # Cascade check: a second model disagreed -> a supervisor should look at this criterion.
+            "needs_review": bool(r.review and r.review.get("needs_review")),
+            "second_opinion": (
+                {"answer": r.review.get("second_answer"), "model": r.review.get("second_model")}
+                if r.review
+                else None
+            ),
         }
         for r in ev.results
     ]

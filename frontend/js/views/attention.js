@@ -9,10 +9,11 @@ const KIND = {
   grave: { label: 'Грубая ошибка', pill: 'cqa-pill--red', icon: 'alert' },
   failed: { label: 'Сбой оценки', pill: 'cqa-pill--red', icon: 'x' },
   appeal: { label: 'Апелляция', pill: 'cqa-pill--amber', icon: 'gavel' },
+  disputed: { label: 'Модели разошлись', pill: 'cqa-pill--amber', icon: 'scan' },
   low_score: { label: 'Низкий балл', pill: 'cqa-pill--amber', icon: 'chart' },
   model_fix: { label: 'Ответ модели исправлен', pill: '', icon: 'refresh' },
 };
-const ORDER = ['grave', 'failed', 'appeal', 'low_score', 'model_fix'];
+const ORDER = ['grave', 'failed', 'appeal', 'disputed', 'low_score', 'model_fix'];
 
 function reasonLine(r, threshold) {
   if (r.kind === 'grave') {
@@ -22,6 +23,10 @@ function reasonLine(r, threshold) {
   }
   if (r.kind === 'failed') return h('div', { class: 'cqa-att-line' }, h('b', null, 'Модель не вернула оценку: '), r.detail || 'ошибка');
   if (r.kind === 'appeal') return h('div', { class: 'cqa-att-line' }, h('b', null, 'На рассмотрении: '), `${r.count} апелл.`);
+  if (r.kind === 'disputed') {
+    return h('div', { class: 'cqa-att-line' }, h('b', null, 'Модели разошлись: '),
+      (r.criteria || []).map(x => `${x.criterion_name} (${x.answer} / ${x.second_answer})`).join(', '));
+  }
   if (r.kind === 'low_score') {
     return h('div', { class: 'cqa-att-line' },
       h('b', null, `Итог ${fmt(r.total)} ниже порога ${fmt(threshold)}`),
@@ -31,7 +36,8 @@ function reasonLine(r, threshold) {
 }
 
 function focusCrit(item) {
-  const r = item.reasons.find(x => x.criterion_id) || item.reasons.find(x => x.weakest?.length)?.weakest?.[0];
+  const r = item.reasons.find(x => x.criterion_id) || item.reasons.find(x => x.criteria?.length)?.criteria?.[0]
+    || item.reasons.find(x => x.weakest?.length)?.weakest?.[0];
   return r?.criterion_id ? `?crit=${encodeURIComponent(r.criterion_id)}` : '';
 }
 

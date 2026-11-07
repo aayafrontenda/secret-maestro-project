@@ -201,6 +201,7 @@ def _materialize_results(
                     dialog.transcript, r.checked_range.model_dump() if r.checked_range else None
                 ),
                 na_reason=r.na_reason,
+                review=r.review.model_dump() if r.review else None,
             )
         )
     return answers

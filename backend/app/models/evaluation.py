@@ -110,6 +110,8 @@ class CriterionResult(Base):
     na_reason: Mapped[str | None] = mapped_column(Text)
     # Set when the backend had to coerce an invalid model answer (e.g. N/A where not allowed).
     normalization_note: Mapped[str | None] = mapped_column(Text)
+    # Cascade check from the ML service: {"agrees", "needs_review", "second_answer", "second_model"}.
+    review: Mapped[dict[str, Any] | None] = mapped_column(JSON)
 
     final_answer: Mapped[Any] = mapped_column(JSON, nullable=False)
     final_score: Mapped[float | None] = mapped_column(Float)
