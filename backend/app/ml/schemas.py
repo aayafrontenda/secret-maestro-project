@@ -37,6 +37,8 @@ class MLEvaluateRequest(BaseModel):
     language: str
     transcript: list[MLTranscriptMessage]
     criteria: list[MLCriterion]
+    # "Общие правила для модели" from the checklist editor: apply to every criterion.
+    guidelines: list[str] = Field(default_factory=list)
 
 
 class MLRange(BaseModel):

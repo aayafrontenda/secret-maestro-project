@@ -45,6 +45,10 @@ class Settings(BaseSettings):
     # Seed the default checklist on startup if none exist.
     seed_default_checklist: bool = True
 
+    # Serve the frontend (../frontend) from the same origin: one port, one tunnel, no CORS.
+    serve_frontend: bool = True
+    frontend_dir: str | None = None  # defaults to <repo>/frontend
+
 
 @lru_cache
 def get_settings() -> Settings:

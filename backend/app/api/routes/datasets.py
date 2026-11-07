@@ -36,7 +36,7 @@ async def import_dataset(body: ImportBody, session: SessionDep, settings: Settin
             settings.organizer_api_url, group_id, settings.organizer_api_timeout_s
         )
     except OrganizerError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"API организаторов: {exc}") from exc
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
     group = dataset.dataset_group_id or group_id
     _, _, ids = await dialog_service.upsert_dialogs(
         session, dataset.records, source="organizer_api", dataset_group_id=group

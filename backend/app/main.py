@@ -1,13 +1,15 @@
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api.router import api_router
-from app.core.config import Settings, get_settings
+from app.core.config import BACKEND_ROOT, Settings, get_settings
 from app.core.db import dispose_engine, get_session_factory
 from app.core.logging import setup_logging
 from app.core.migrations import run_migrations
@@ -92,9 +94,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(api_router)
 
-    @app.get("/", include_in_schema=False)
-    async def root():
-        return {"service": settings.app_name, "docs": "/docs", "api": "/api"}
+    frontend = Path(settings.frontend_dir or BACKEND_ROOT.parent / "frontend")
+    if settings.serve_frontend and (frontend / "index.html").is_file():
+        # Mounted last, so /api and /docs win; everything else is the static frontend.
+        app.mount("/", StaticFiles(directory=frontend, html=True), name="frontend")
+        log.info("serving frontend from %s", frontend)
+    else:
+
+        @app.get("/", include_in_schema=False)
+        async def root():
+            return {"service": settings.app_name, "docs": "/docs", "api": "/api"}
 
     return app
 

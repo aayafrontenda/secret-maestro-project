@@ -20,20 +20,58 @@ class OrganizerDataset(BaseModel):
     records: list[DialogIn]
 
 
+FIELD_NAMES = {
+    "conversation_id": "conversation_id",
+    "channel": "channel",
+    "language": "language",
+    "transcript": "transcript",
+    "speaker": "speaker",
+    "timestamp": "timestamp",
+    "text": "text",
+}
+
+
+def _describe(errors: list[dict[str, Any]]) -> str:
+    """One readable line for the UI instead of pydantic's dump."""
+    first = errors[0]
+    loc = [p for p in first.get("loc", ()) if p != "records"]
+    if not loc:
+        return "запись без обязательных полей"
+    parts = []
+    if isinstance(loc[0], int):
+        parts.append(f"запись {loc[0] + 1}")
+        loc = loc[1:]
+    if loc and loc[0] == "transcript" and len(loc) > 1 and isinstance(loc[1], int):
+        parts.append(f"реплика {loc[1] + 1}")
+        loc = [loc[0], *loc[2:]]
+    field = loc[-1] if loc else None
+    what = "нет поля" if first.get("type") == "missing" else "неверное поле"
+    if field is not None:
+        parts.append(f"{what} «{FIELD_NAMES.get(str(field), field)}»")
+    more = f" (и ещё ошибок: {len(errors) - 1})" if len(errors) > 1 else ""
+    return ", ".join(parts) + more
+
+
 def parse_dataset(payload: Any) -> OrganizerDataset:
     """Accepts the organizer envelope, a bare `data` object, or a bare list of records."""
     if isinstance(payload, list):
         payload = {"records": payload}
     if not isinstance(payload, dict):
-        raise OrganizerError("dataset must be a JSON object or array")
+        raise OrganizerError("Ожидается JSON-объект или массив записей")
     if "isSuccess" in payload or "data" in payload:
         if payload.get("isSuccess") is False:
-            raise OrganizerError(f"organizer API error: {payload.get('error') or 'unknown'}")
+            raise OrganizerError(
+                f"Организаторы вернули ошибку: {payload.get('error') or 'без текста'}"
+            )
         payload = payload.get("data") or {}
+    if not isinstance(payload.get("records"), list) or not payload["records"]:
+        raise OrganizerError(
+            "В файле нет записей: ожидается data.records[] как в ответе API организаторов"
+        )
     try:
         return OrganizerDataset.model_validate(payload)
     except ValidationError as exc:
-        raise OrganizerError(f"invalid dataset format: {exc.errors()[:3]}") from exc
+        raise OrganizerError(f"Неверный формат набора: {_describe(exc.errors())}") from exc
 
 
 def load_dataset_file(path: Path | str) -> OrganizerDataset:
@@ -52,14 +90,30 @@ def dataset_url(api_url: str, group_id: str) -> str:
 
 
 async def fetch_dataset(api_url: str, group_id: str, timeout_s: float = 60.0) -> OrganizerDataset:
+    # Messages never include the URL: it carries the organizers' signature.
     async with httpx.AsyncClient(timeout=timeout_s, follow_redirects=True) as client:
         try:
             resp = await client.get(dataset_url(api_url, group_id))
-            resp.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise OrganizerError("API организаторов не ответило вовремя") from exc
         except httpx.HTTPError as exc:
-            raise OrganizerError(f"organizer API request failed: {exc}") from exc
+            raise OrganizerError(f"API организаторов недоступно ({type(exc).__name__})") from exc
+    if resp.status_code == 404:
+        raise OrganizerError(f"Набор «{group_id}» не найден у организаторов")
+    if resp.status_code >= 400:
+        detail = ""
         try:
-            payload = resp.json()
-        except ValueError as exc:
-            raise OrganizerError("organizer API returned non-JSON body") from exc
+            body = resp.json()
+            detail = (
+                (body.get("error") or body.get("message") or "") if isinstance(body, dict) else ""
+            )
+        except ValueError:
+            pass
+        raise OrganizerError(
+            f"API организаторов ответило {resp.status_code}" + (f": {detail}" if detail else "")
+        )
+    try:
+        payload = resp.json()
+    except ValueError as exc:
+        raise OrganizerError("API организаторов вернуло не JSON") from exc
     return parse_dataset(payload)

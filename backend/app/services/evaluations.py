@@ -75,8 +75,16 @@ async def create_batch(
 # --- pipeline -------------------------------------------------------------------------------
 
 
+def _guidelines(snapshot: dict[str, Any]) -> list[str]:
+    notes = ((snapshot.get("document") or {}).get("rules") or {}).get("notes") or []
+    if isinstance(notes, str):
+        notes = notes.splitlines()
+    return [n.strip() for n in notes if isinstance(n, str) and n.strip()]
+
+
 def build_ml_request(dialog: Dialog, snapshot: dict[str, Any]) -> MLEvaluateRequest:
     return MLEvaluateRequest(
+        guidelines=_guidelines(snapshot),
         conversation_id=dialog.id,
         channel=dialog.channel,
         language=dialog.language,

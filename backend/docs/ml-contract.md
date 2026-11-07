@@ -69,9 +69,17 @@ frontend and the appeal flow can be developed and demoed.
       "allow_na": false,
       "is_flag": true
     }
+  ],
+  "guidelines": [
+    "«Нет» — действие было нужно, но оператор его пропустил или выполнил неправильно. N/A — критерий неприменим по условию.",
+    "Реплики бота и системные события — контекст, оценивается только оператор."
   ]
 }
 ```
+
+`guidelines` (list of strings) is sent too: the «Общие правила для модели» field of the checklist
+editor — general rules that apply to every criterion (e.g. "«Нет» — действие было нужно, но…;
+N/A — критерий неприменим по условию", "реплики бота — только контекст"). Put them into the prompt.
 
 Notes:
 

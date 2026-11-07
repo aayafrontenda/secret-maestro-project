@@ -36,6 +36,7 @@ async def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterat
     monkeypatch.setenv("QUEUE_WORKERS", "2")
     monkeypatch.setenv("ENVIRONMENT", "test")
     monkeypatch.setenv("LOG_LEVEL", "WARNING")
+    monkeypatch.setenv("SERVE_FRONTEND", "false")
 
     from app.core import config, db
 

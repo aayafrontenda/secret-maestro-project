@@ -328,3 +328,127 @@ async def test_cancel_batch(seeded: AsyncClient):
         "status"
     ] == "completed"
     assert (await seeded.post(f"{API}/evaluations/batch/nope/cancel")).status_code == 404
+
+
+async def test_serves_frontend_from_same_origin(tmp_path, monkeypatch: pytest.MonkeyPatch):
+    from httpx import ASGITransport
+
+    from app.core import config, db
+
+    site = tmp_path / "frontend"
+    (site / "js").mkdir(parents=True)
+    (site / "index.html").write_text("<!doctype html><title>CQA</title>", encoding="utf-8")
+    (site / "js" / "config.js").write_text("export const CONFIG = {};", encoding="utf-8")
+    for name, field in config.Settings.model_fields.items():
+        d = field.default
+        monkeypatch.setenv(
+            name.upper(), "" if d is None else str(d).lower() if isinstance(d, bool) else str(d)
+        )
+    monkeypatch.setenv("DATABASE_URL", f"sqlite+aiosqlite:///{tmp_path / 'fe.db'}")
+    monkeypatch.setenv("SERVE_FRONTEND", "true")
+    monkeypatch.setenv("FRONTEND_DIR", str(site))
+    config.get_settings.cache_clear()
+    await db.dispose_engine()
+
+    from app.main import create_app
+
+    app = create_app(config.get_settings())
+    async with app.router.lifespan_context(app):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            r = await c.get("/")
+            assert r.status_code == 200 and "<title>CQA</title>" in r.text
+            assert (
+                (await c.get("/js/config.js")).headers["content-type"].startswith("text/javascript")
+            )
+            assert (await c.get("/api/health")).json()["status"] == "ok"
+            assert (await c.get("/docs")).status_code == 200
+            assert (await c.get("/nope.js")).status_code == 404
+    await db.dispose_engine()
+    config.get_settings.cache_clear()
+
+
+async def test_ml_request_carries_checklist_guidelines(seeded: AsyncClient):
+    seen = {}
+
+    class Spy:
+        name = "spy"
+
+        async def evaluate(self, request):
+            seen["guidelines"] = request.guidelines
+            from app.ml.mock import MockMLClient
+
+            return await MockMLClient().evaluate(request)
+
+        async def health(self):
+            return True
+
+        async def aclose(self):
+            return None
+
+    _use(seeded, Spy())
+    doc = (await seeded.get(f"{API}/checklists/active")).json()
+    doc["rules"]["notes"] = ["Правило один.", "  ", "Правило два."]
+    assert (await seeded.put(f"{API}/checklists/active", json=doc)).status_code == 200
+    r = await seeded.post(f"{API}/evaluations", json={"conversation_id": "p1-ru-001"})
+    assert r.status_code == 200
+    assert seen["guidelines"] == ["Правило один.", "Правило два."]
+
+
+async def test_organizer_errors_are_readable_and_hide_the_signed_url(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+):
+    import httpx
+
+    from app.core import config
+    from app.services import organizer
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params["group_id"] == "NOPE":
+            return httpx.Response(404, text="not found")
+        return httpx.Response(500, json={"error": "flow failed"})
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        organizer.httpx,
+        "AsyncClient",
+        lambda **kw: real(transport=httpx.MockTransport(handler), **kw),
+    )
+    monkeypatch.setattr(
+        config.get_settings(),
+        "organizer_api_url",
+        "https://org.test/invoke?sig=SECRET&group_id=DEV",
+    )
+
+    r = await client.post(f"{API}/datasets/import", json={"group_id": "NOPE"})
+    assert r.status_code == 502
+    assert r.json()["error"] == "Набор «NOPE» не найден у организаторов"
+    r = await client.post(f"{API}/datasets/import", json={"group_id": "X"})
+    assert r.json()["error"] == "API организаторов ответило 500: flow failed"
+    assert "SECRET" not in r.text and "org.test" not in r.text
+
+
+@pytest.mark.parametrize(
+    "payload, message",
+    [
+        ({"foo": 1}, "В файле нет записей"),
+        (
+            [{"conversation_id": "x", "channel": "chat", "language": "RU"}],
+            "запись 1, нет поля «transcript»",
+        ),
+        (
+            [
+                {
+                    "conversation_id": "x",
+                    "channel": "chat",
+                    "language": "RU",
+                    "transcript": [{"timestamp": "0", "text": "hi"}],
+                }
+            ],
+            "запись 1, реплика 1, нет поля «speaker»",
+        ),
+    ],
+)
+async def test_upload_errors_are_readable(client: AsyncClient, payload, message):
+    r = await client.post(f"{API}/datasets/upload", json={"name": "x", "payload": payload})
+    assert r.status_code == 422
+    assert message in r.json()["error"]
