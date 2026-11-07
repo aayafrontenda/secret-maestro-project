@@ -1,3 +1,19 @@
+# Secrets and local settings
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Real chats and run outputs
+ml/data/real/
+ml/runs/
+
+# Team
 .DS_Store
 node_modules/
 claude/
