@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+from .env import load_env_file
 from .ingest import IngestError, parse_file
 from .llm import LLMUnavailable, OllamaClient
 from .schemas import ScoreResult
@@ -82,6 +83,7 @@ def _schema(_: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
+    load_env_file()
     parser = argparse.ArgumentParser(prog="maestro", description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
 

@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from maestro.contract import Criterion, EvaluateRequest, evaluate  # noqa: E402
+from maestro.env import load_env_file  # noqa: E402
 from maestro.llm import LLMOutputError, LLMUnavailable, OllamaClient, OpenAIClient  # noqa: E402
 
 
@@ -73,6 +74,7 @@ def main() -> int:
     parser.add_argument("--out", type=Path, help="directory for responses.jsonl")
     parser.add_argument("--labels", type=Path, help="reference labels; only the labelled dialogs are run")
     args = parser.parse_args()
+    load_env_file()
 
     criteria = [Criterion(**c) for c in json.loads(args.criteria.read_text(encoding="utf-8"))]
     guidelines: list[str] = []

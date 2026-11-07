@@ -1,0 +1,9 @@
+# Secrets are passed by docker compose (env_file), never baked into the image.
+.env
+.env.*
+!.env.example
+.venv
+runs
+data/real
+**/__pycache__
+.pytest_cache

@@ -1,0 +1,10 @@
+# Secrets are passed by docker compose (env_file), never baked into the image.
+.env
+.env.*
+!.env.example
+.venv
+**/__pycache__
+.pytest_cache
+# The database lives in the backend-data volume, not in the image.
+data/cqa.db*
+data/runtime.json

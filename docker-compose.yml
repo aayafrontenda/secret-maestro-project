@@ -1,0 +1,43 @@
+# The demo stack: backend + frontend on :8000 and the ML service on :8001.
+# Ollama runs on the host (it needs the GPU); the Cloudflare tunnel (a Windows service) points at
+# localhost:8000. Containers restart on a crash and come back with Docker Desktop after a reboot.
+#
+#   docker compose up -d --build     start or update
+#   docker compose logs -f           follow the logs
+#   docker compose down              stop (the database volume is kept)
+name: maestro
+
+services:
+  ml:
+    build: ./ml
+    env_file:
+      - path: ./ml/.env
+        required: false
+    environment:
+      # Ollama on the host, as seen from a container (Docker Desktop).
+      MAESTRO_OLLAMA_URL: http://host.docker.internal:11434
+    ports:
+      - "127.0.0.1:8001:8001"
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file:
+      - path: ./backend/.env
+        required: false
+    environment:
+      ML_PROVIDER: http
+      ML_SERVICE_URL: http://ml:8001
+      QUEUE_WORKERS: "1"  # one GPU: one evaluation at a time
+      FRONTEND_DIR: /frontend
+    volumes:
+      - ./frontend:/frontend:ro
+      - backend-data:/app/data
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      - ml
+    restart: unless-stopped
+
+volumes:
+  backend-data:
