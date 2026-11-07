@@ -128,6 +128,37 @@ def test_reported_verification_means_identification_was_required():
     assert result.answer == "yes"
 
 
+class Recording(FakeLLM):
+    def __init__(self, answers):
+        super().__init__(answers)
+        self.prompts: list[str] = []
+
+    def complete(self, system, user, schema):
+        self.prompts.append(user)
+        return super().complete(system, user, schema)
+
+
+def test_user_added_guideline_reaches_every_prompt():
+    rule = "Обращение на «ты» считается невежливым."
+    llm = Recording(ANSWERS)
+    evaluate(request().model_copy(update={"guidelines": [rule]}), llm)
+    assert llm.prompts and all(rule in p for p in llm.prompts)
+
+
+def test_standard_guidelines_go_only_to_the_generic_evaluator():
+    standard = "Теги и вложения в оценку не входят."
+    new = {
+        "code": "c9", "title": "Обращение по имени", "answer_type": "yes_no", "allow_na": False,
+        "rule": "Да — оператор хотя бы раз обратился к клиенту по имени.",
+    }
+    llm = Recording({**ANSWERS, "generic": {"answer": "no", "evidence": [], "explanation": "..."}})
+    evaluate(request(CHECKLIST + [new]).model_copy(update={"guidelines": [standard]}), llm)
+    generic = [p for p in llm.prompts if "\nRule: " in p]
+    narrow = [p for p in llm.prompts if "\nRule: " not in p]
+    assert len(generic) == 1 and standard in generic[0]
+    assert narrow and all(standard not in p for p in narrow)
+
+
 def test_edited_settings_constrain_the_answer():
     # N/A switched off for c2 in the editor: the standard logic's N/A becomes "no".
     edited = [dict(CHECKLIST[1], allow_na=False)]

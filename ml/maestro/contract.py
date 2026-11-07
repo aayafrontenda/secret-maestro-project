@@ -11,7 +11,7 @@ from .facts import extract_facts
 from .generic import GenericCriterion, evaluate_generic
 from .ingest import parse_role, parse_time
 from .llm import LLMClient
-from .presets import match_standard
+from .presets import extra_guidelines, match_standard
 from .probes import Context
 from .rules import DECIDERS, Decision
 from .schemas import Message, Transcript
@@ -49,6 +49,9 @@ class EvaluateRequest(BaseModel):
     language: str = "RU"
     transcript: list[TranscriptMessage]
     criteria: list[Criterion]
+    guidelines: list[str] = Field(
+        default_factory=list, description="General rules from the checklist editor that apply to every criterion"
+    )
 
 
 # ---------- response ----------
@@ -157,7 +160,7 @@ def _standard_result(ctx: Context, criterion: Criterion, preset_id: str, languag
     )
 
 
-def _generic_result(ctx: Context, criterion: Criterion, language: str) -> CriterionResult:
+def _generic_result(ctx: Context, criterion: Criterion, language: str, guidelines: list[str]) -> CriterionResult:
     labels = {int(s["value"]): str(s.get("label", "")) for s in criterion.scale_steps or [] if "value" in s}
     spec = GenericCriterion(
         key=criterion.code,
@@ -169,7 +172,7 @@ def _generic_result(ctx: Context, criterion: Criterion, language: str) -> Criter
         is_flag=criterion.is_flag,
         scale=[(v, labels.get(v, "")) for v in _scale_values(criterion)],
     )
-    result = evaluate_generic(ctx, spec, language)
+    result = evaluate_generic(ctx, spec, language, guidelines)
     answer = _fit_answer(result.answer, criterion)
     checked = None
     if answer == "no" and not result.evidence:
@@ -192,8 +195,13 @@ def evaluate(request: EvaluateRequest, llm: LLMClient) -> EvaluateResponse:
     started = time.perf_counter()
     language = LANGUAGES.get(request.language.strip().upper(), "ru")
     transcript = to_transcript(request)
+    guidelines = [g.strip() for g in request.guidelines if g and g.strip()]
     ctx = Context(
-        transcript=transcript, facts=extract_facts(transcript, language), llm=llm, channel=request.channel
+        transcript=transcript,
+        facts=extract_facts(transcript, language),
+        llm=llm,
+        channel=request.channel,
+        guidelines=extra_guidelines(guidelines),
     )
 
     results = []
@@ -202,7 +210,7 @@ def evaluate(request: EvaluateRequest, llm: LLMClient) -> EvaluateResponse:
         if preset_id is not None:
             results.append(_standard_result(ctx, criterion, preset_id, language))
         else:
-            results.append(_generic_result(ctx, criterion, language))
+            results.append(_generic_result(ctx, criterion, language, guidelines))
 
     traces = [t for attempts in ctx.traces.values() for t in attempts]
     return EvaluateResponse(

@@ -166,21 +166,45 @@ If the model ends up as a Python package, implement `app.ml.base.MLClient`
 (`evaluate(request) -> MLEvaluateResponse`, `health()`, `aclose()`) and register it in
 `app/ml/__init__.py::build_ml_client`. Nothing else changes.
 
-## Integration plan for the `maestro` package (ml/docs/ML_API.md)
+## The ML service in `ml/`
 
-The ML team ships a Python package, not an HTTP service: `score_transcript(transcript, llm, ...)`
-is synchronous, blocking, ~10–15 s per chat on one GPU, and Ollama serialises calls. The backend
-side of the integration (to be added once `ml/` lands in `main`):
+`ml/` implements this contract over HTTP, so the backend uses the existing `HttpMLClient`; no
+extra client code is needed. Checked end to end with this backend: `POST /api/evaluations` →
+`POST /evaluate` → a completed evaluation with model, tokens, evidence indexes and checked ranges.
 
-- `app/ml/local.py` — `LocalMLClient` implementing `MLClient`: wraps `score_transcript` in
-  `asyncio.to_thread`, guarded by a semaphore of 1 (one GPU); `health()` → `llm.health()["ok"]`.
-- Mapping to this contract: `criteria[].criterion_id` ("01") ↔ our criterion `code`; `answer` as
-  is; `rationale` → `explanation`; `evidence[].message_id` ("M2" = 1-based position after empty
-  messages are dropped) → 0-based transcript index; `expected_at` → `checked_range`;
-  `status: "failed"` on a criterion → evaluation `failed` (no made-up score, as the ML doc says);
-  `model`, `llm_calls`, `duration_ms` → `model` / `usage`.
-- The checklist is passed from our request, so the prompt must be built from `criteria[].rule`
-  (`description` in the UI document), not from a hard-coded checklist.
-- `.env`: `ML_PROVIDER=local`, `QUEUE_WORKERS=1`, `EVALUATION_WAIT_S=85`. Batches of 65 take
-  ~15 min, so start the control-set batch right at hour 23.
-- Until then `ML_PROVIDER=mock` keeps the whole UI flow working.
+Run it on the machine with the GPU (Ollama with `qwen3.5:9b` pulled, see `ml/README.md`):
+
+```
+cd ml
+uv sync
+uv run maestro serve          # http://127.0.0.1:8001
+```
+
+Backend `.env`:
+
+```
+ML_PROVIDER=http
+ML_SERVICE_URL=http://127.0.0.1:8001
+QUEUE_WORKERS=1
+```
+
+What to expect:
+
+- **Speed.** 17–36 s per dialog, about 24 s on average on an RTX 4070 Laptop; 10 dialogs take
+  about 4 minutes, all 65 DEV dialogs about 26 minutes. The first request after Ollama starts
+  also loads the model (about a minute). The defaults `ML_TIMEOUT_S=180` and
+  `EVALUATION_WAIT_S=85` fit.
+- **One dialog at a time.** The service runs model calls for one dialog at a time because there
+  is one GPU; extra queue workers only wait inside it, so `QUEUE_WORKERS=1`.
+- **Any checklist.** Each criterion is matched to the eight standard ones by its rule, answer
+  type and scale; a new or reworded criterion is scored from its own `rule`, `na_rule` and
+  `scale_steps`. `guidelines` are applied; rules added in the editor reach every question.
+- **Language.** `explanation` and `na_reason` follow `language` (`RU`, `KZ`, `EN`).
+- **Cost.** `model` is `{"provider": "ollama", "name": "qwen3.5:9b"}` and `usage.cost_usd` is 0:
+  everything runs locally.
+- **Extra fields.** Results also carry `method` (`standard` or `generic`), `standard_id` and
+  `facts`, and the response carries `duration_ms`; the backend's schema ignores them.
+- **Errors.** 503 when Ollama or the model is unavailable, 502 when the model gave no usable
+  answer after retries; both are retried by `HttpMLClient`. The service never makes up an answer.
+
+Details: `ml/docs/ML_API.md`.

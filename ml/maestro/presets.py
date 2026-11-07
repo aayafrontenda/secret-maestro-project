@@ -44,6 +44,17 @@ STANDARDS: tuple[Standard, ...] = (
                     "Yes — an insult to the client, an offer of a paid service bypassing the company, or disclosure of confidential information was found."), "yes_no", is_flag=True),
 )
 
+# The general rules printed in the checklist PDF. The built-in logic already encodes them,
+# and repeating them in every narrow question lowered agreement with our labels (80% -> 76%),
+# so only rules that differ from these are added to the narrow questions.
+STANDARD_GUIDELINES: tuple[str, ...] = (
+    "«Нет» — действие было нужно, но оператор его пропустил или выполнил неправильно. N/A — критерий неприменим по условию.",
+    "Общий вопрос о тарифах не требует идентификации. Если требовалась проверка личности перед защищённым действием и она не подтверждена в чате — «Нет».",
+    "Для пропущенного действия укажите место, где оно ожидалось. Для N/A объясните, какое условие выполнено.",
+    "Реплики бота и системные события — контекст, оценивается только оператор.",
+    "Теги и вложения в оценку не входят.",
+)
+
 NOISE = re.compile(r"[\W\d_]+", re.UNICODE)
 
 
@@ -57,6 +68,12 @@ def _normalize(text: str) -> str:
 
 def similarity(a: str, b: str) -> float:
     return SequenceMatcher(None, _normalize(a), _normalize(b), autojunk=False).ratio()
+
+
+def extra_guidelines(guidelines: list[str]) -> list[str]:
+    """Rules the user added or reworded, i.e. those not among the standard ones."""
+    standard = {_normalize(rule) for rule in STANDARD_GUIDELINES}
+    return [rule for rule in guidelines if _normalize(rule) not in standard]
 
 
 def match_standard(

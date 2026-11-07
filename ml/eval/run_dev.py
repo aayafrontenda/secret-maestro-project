@@ -31,7 +31,7 @@ def load_records(path: Path) -> list[dict]:
     return raw["records"] if isinstance(raw, dict) else raw
 
 
-def to_request(record: dict, criteria: list[Criterion]) -> EvaluateRequest:
+def to_request(record: dict, criteria: list[Criterion], guidelines: list[str] | None = None) -> EvaluateRequest:
     transcript = [
         {"index": i, "timestamp": m.get("timestamp"), "speaker": m["speaker"], "text": m["text"]}
         for i, m in enumerate(record["transcript"])
@@ -42,6 +42,7 @@ def to_request(record: dict, criteria: list[Criterion]) -> EvaluateRequest:
         language=record.get("language", "RU"),
         transcript=transcript,
         criteria=criteria,
+        guidelines=guidelines or [],
     )
 
 
@@ -50,6 +51,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("dataset", type=Path)
     parser.add_argument("--criteria", type=Path, default=ROOT / "data" / "default_checklist.json")
+    parser.add_argument(
+        "--guidelines",
+        type=Path,
+        default=ROOT / "data" / "default_guidelines.json",
+        help="general checklist rules, as the backend sends them; 'none' sends no rules",
+    )
     parser.add_argument("--only", help="comma-separated conversation IDs")
     parser.add_argument("--language", help="RU, KZ or EN")
     parser.add_argument("--limit", type=int)
@@ -59,6 +66,9 @@ def main() -> int:
     args = parser.parse_args()
 
     criteria = [Criterion(**c) for c in json.loads(args.criteria.read_text(encoding="utf-8"))]
+    guidelines: list[str] = []
+    if str(args.guidelines).lower() != "none":
+        guidelines = json.loads(args.guidelines.read_text(encoding="utf-8"))
     records = load_records(args.dataset)
     labels: dict[str, dict] = {}
     if args.labels:
@@ -93,7 +103,7 @@ def main() -> int:
     codes = [c.code for c in criteria]
     print(f"{len(records)} dialogs, criteria: {', '.join(codes)}\n")
     for n, record in enumerate(records, start=1):
-        request = to_request(record, criteria)
+        request = to_request(record, criteria, guidelines)
         try:
             response = evaluate(request, llm)
         except LLMOutputError as exc:

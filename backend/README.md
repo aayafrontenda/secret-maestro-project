@@ -41,11 +41,16 @@ backend host; CORS is open by default (`CORS_ORIGINS=*`).
 
 ### Connect the ML service
 
+Start it from the repository root: `cd ml && uv sync && uv run maestro serve` (needs Ollama with
+`qwen3.5:9b`, see [`../ml/README.md`](../ml/README.md)). Then in `.env`:
+
 ```
 ML_PROVIDER=http
-ML_SERVICE_URL=http://localhost:8001
+ML_SERVICE_URL=http://127.0.0.1:8001
+QUEUE_WORKERS=1
 ```
 
+One GPU scores one dialog at a time, about 24 s each, so one queue worker is enough.
 The contract is in [`docs/ml-contract.md`](docs/ml-contract.md). With `ML_PROVIDER=mock`
 (default) a built-in heuristic answers instead, so the UI works before the model is ready.
 

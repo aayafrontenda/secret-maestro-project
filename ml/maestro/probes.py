@@ -248,6 +248,7 @@ class Context:
     facts: ChatFacts
     llm: LLMClient
     channel: str = "agent chat"
+    guidelines: list[str] = field(default_factory=list)  # general rules from the checklist editor
     traces: dict[str, list[AttemptTrace]] = field(default_factory=dict)
     _cache: dict[str, ProbeAnswer] = field(default_factory=dict)
 
@@ -345,6 +346,9 @@ class Context:
 
     def call(self, key: str, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
         """Ask the model, retrying unusable answers, and record every attempt under `key`."""
+        if self.guidelines and not key.startswith("generic:"):  # the generic evaluator adds all rules itself
+            rules = "\n".join(f"- {rule}" for rule in self.guidelines)
+            prompt = f"General rules of this checklist (apply them to your answer):\n{rules}\n\n{prompt}"
         if "call" in self.channel.lower():
             prompt = f"{CALL_NOTE}\n\n{prompt}"
         traces = self.traces.setdefault(key, [])

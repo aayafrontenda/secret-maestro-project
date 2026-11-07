@@ -62,7 +62,10 @@ def _describe(criterion: GenericCriterion) -> str:
     return "\n".join(lines)
 
 
-def evaluate_generic(ctx: Context, criterion: GenericCriterion, language: str) -> GenericAnswer:
+def evaluate_generic(
+    ctx: Context, criterion: GenericCriterion, language: str, guidelines: list[str] | None = None
+) -> GenericAnswer:
+    """`guidelines` are all general rules of the checklist; this evaluator judges a whole criterion, so it needs them."""
     shown = ctx.shown("all")
     ids = [m.id for m in shown]
     if criterion.answer_type == "scale":
@@ -81,9 +84,12 @@ def evaluate_generic(ctx: Context, criterion: GenericCriterion, language: str) -
         },
         "required": ["why", "answer", "evidence", "explanation"],
     }
+    rules = ""
+    if guidelines:
+        rules = "General rules of this checklist:\n" + "\n".join(f"- {rule}" for rule in guidelines) + "\n\n"
     prompt = (
         f"The whole chat:\n<messages>\n{render_messages(shown)}\n</messages>\n\n"
-        f"{_describe(criterion)}\n\n"
+        f"{rules}{_describe(criterion)}\n\n"
         f"Write \"explanation\" in {LANGUAGE_NAMES.get(language, 'Russian')}."
     )
     data = ctx.call(f"generic:{criterion.key}", SYSTEM_PROMPT, prompt, schema)
