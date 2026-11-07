@@ -1,163 +1,163 @@
-import json
+from datetime import UTC, datetime
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.deps import SessionDep, SettingsDep
-from app.schemas.common import Page
-from app.schemas.dialog import (
-    DialogDetail,
-    DialogIn,
-    DialogSummary,
-    EvaluationBrief,
-    ImportRequest,
-    ImportResult,
-)
+from app.api import serializers as ser
+from app.api.deps import SessionDep
+from app.models import Appeal, Dialog, Evaluation
+from app.models.appeal import AppealStatus
+from app.models.evaluation import EvaluationStatus
 from app.services import dialogs as dialog_service
-from app.services.organizer import OrganizerError, fetch_dataset, parse_dataset
+from app.services import evaluations as evaluation_service
+from app.services.audio import resolve_audio
 
 router = APIRouter(prefix="/dialogs", tags=["dialogs"])
 
 
-@router.get("", response_model=Page[DialogSummary])
+async def _get_or_404(session: AsyncSession, dialog_id: str) -> Dialog:
+    d = await dialog_service.get_dialog(session, dialog_id)
+    if d is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Диалог {dialog_id} не найден")
+    return d
+
+
+async def latest_completed(session: AsyncSession, dialog_ids: list[str]) -> dict[str, Evaluation]:
+    if not dialog_ids:
+        return {}
+    stmt = (
+        select(Evaluation)
+        .where(
+            Evaluation.dialog_id.in_(dialog_ids),
+            Evaluation.status == EvaluationStatus.completed,
+        )
+        .order_by(Evaluation.dialog_id, Evaluation.id.desc())
+    )
+    latest: dict[str, Evaluation] = {}
+    for ev in (await session.scalars(stmt)).all():
+        latest.setdefault(ev.dialog_id, ev)
+    return latest
+
+
+async def _appeal_counts(
+    session: AsyncSession, evaluation_ids: list[int]
+) -> dict[int, tuple[int, int]]:
+    if not evaluation_ids:
+        return {}
+    stmt = (
+        select(Appeal.evaluation_id, Appeal.status, func.count())
+        .where(Appeal.evaluation_id.in_(evaluation_ids))
+        .group_by(Appeal.evaluation_id, Appeal.status)
+    )
+    counts: dict[int, tuple[int, int]] = {}
+    for ev_id, st, n in (await session.execute(stmt)).all():
+        open_n, total_n = counts.get(ev_id, (0, 0))
+        if st == AppealStatus.pending:
+            open_n += n
+        counts[ev_id] = (open_n, total_n + n)
+    return counts
+
+
+@router.get("")
 async def list_dialogs(
     session: SessionDep,
-    channel: str | None = Query(default=None, description='"agent chat" or "voice call"'),
+    channel: str | None = Query(default=None, description='"agent chat" | "voice call"'),
     language: str | None = Query(default=None, description="RU | KZ | EN"),
     group_id: str | None = None,
-    q: str | None = Query(default=None, description="Substring match on conversation_id"),
-    limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
 ):
-    rows, total, latest = await dialog_service.list_dialogs(
-        session,
-        channel=channel,
-        language=language,
-        group_id=group_id,
-        q=q,
-        limit=limit,
-        offset=offset,
-    )
-    items = []
-    for d in rows:
-        item = DialogSummary.model_validate(d)
-        if d.id in latest:
-            item.latest_evaluation = EvaluationBrief.model_validate(latest[d.id])
-        items.append(item)
-    return Page(items=items, total=total, limit=limit, offset=offset)
+    """Rows for the dialog list: latest completed score, checklist version, appeal counters."""
+    stmt = select(Dialog).order_by(Dialog.id)
+    if channel:
+        stmt = stmt.where(Dialog.channel == channel)
+    if language:
+        stmt = stmt.where(Dialog.language == language.upper())
+    if group_id:
+        stmt = stmt.where(Dialog.dataset_group_id == group_id)
+    dialogs = list((await session.scalars(stmt)).all())
+    latest = await latest_completed(session, [d.id for d in dialogs])
+    counts = await _appeal_counts(session, [ev.id for ev in latest.values()])
+    rows = []
+    for d in dialogs:
+        ev = latest.get(d.id)
+        open_n, total_n = counts.get(ev.id, (0, 0)) if ev else (0, 0)
+        rows.append(ser.dialog_row(d, ev, open_n, total_n))
+    return rows
 
 
-@router.get("/{dialog_id}", response_model=DialogDetail)
+@router.get("/{dialog_id}")
 async def get_dialog(dialog_id: str, session: SessionDep):
-    d = await dialog_service.get_dialog(session, dialog_id, with_evaluations=True)
-    if d is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "dialog not found")
-    detail = DialogDetail.model_validate(d)
-    evaluations = sorted(d.evaluations, key=lambda e: e.id, reverse=True)
-    detail.evaluations = [EvaluationBrief.model_validate(e) for e in evaluations]
-    detail.latest_evaluation = detail.evaluations[0] if detail.evaluations else None
-    return detail
-
-
-@router.post("", response_model=ImportResult, status_code=status.HTTP_201_CREATED)
-async def upload_dialogs(payload: DialogIn | list[DialogIn], session: SessionDep):
-    """Manually upload one dialog or a list of dialogs (organizer record format)."""
-    records = payload if isinstance(payload, list) else [payload]
-    created, updated, ids = await dialog_service.upsert_dialogs(
-        session, records, source="manual", dataset_group_id=None
-    )
-    await session.commit()
-    return ImportResult(
-        dataset_group_id=None, received=len(records), created=created, updated=updated, ids=ids
-    )
-
-
-@router.post("/import", response_model=ImportResult)
-async def import_from_organizer(body: ImportRequest, session: SessionDep, settings: SettingsDep):
-    """Fetch a dataset from the organizer API by group_id and store it."""
-    if not settings.organizer_api_url:
-        raise HTTPException(
-            status.HTTP_503_SERVICE_UNAVAILABLE,
-            "ORGANIZER_API_URL is not configured; use POST /dialogs/import-file instead",
-        )
-    try:
-        dataset = await fetch_dataset(
-            settings.organizer_api_url, body.group_id, settings.organizer_api_timeout_s
-        )
-    except OrganizerError as exc:
-        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(exc)) from exc
-    group = dataset.dataset_group_id or body.group_id
-    created, updated, ids = await dialog_service.upsert_dialogs(
-        session, dataset.records, source="organizer_api", dataset_group_id=group
-    )
-    await session.commit()
-    return ImportResult(
-        dataset_group_id=group,
-        received=len(dataset.records),
-        created=created,
-        updated=updated,
-        ids=ids,
-    )
-
-
-@router.post("/import-file", response_model=ImportResult)
-async def import_from_file(file: UploadFile, session: SessionDep):
-    """Upload the organizer's JSON response (e.g. invoke.json) as a file."""
-    raw = await file.read()
-    try:
-        dataset = parse_dataset(json.loads(raw.decode("utf-8")))
-    except (UnicodeDecodeError, ValueError) as exc:
-        raise HTTPException(
-            status.HTTP_422_UNPROCESSABLE_CONTENT, f"invalid JSON file: {exc}"
-        ) from exc
-    except OrganizerError as exc:
-        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
-    created, updated, ids = await dialog_service.upsert_dialogs(
-        session, dataset.records, source="file", dataset_group_id=dataset.dataset_group_id
-    )
-    await session.commit()
-    return ImportResult(
-        dataset_group_id=dataset.dataset_group_id,
-        received=len(dataset.records),
-        created=created,
-        updated=updated,
-        ids=ids,
-    )
+    """The dialog in the organizer's record format (transcript as received)."""
+    return ser.dialog_record(await _get_or_404(session, dialog_id))
 
 
 @router.delete("/{dialog_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_dialog(dialog_id: str, session: SessionDep):
-    d = await dialog_service.get_dialog(session, dialog_id)
-    if d is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "dialog not found")
+    """Remove a dialog with its evaluations and appeals."""
+    d = await _get_or_404(session, dialog_id)
     await session.delete(d)
     await session.commit()
 
 
+@router.get("/{dialog_id}/evaluation")
+async def latest_evaluation(dialog_id: str, session: SessionDep):
+    """Latest completed evaluation for the dialog, or 404 (the UI then starts one)."""
+    await _get_or_404(session, dialog_id)
+    ev = (await latest_completed(session, [dialog_id])).get(dialog_id)
+    if ev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Диалог ещё не оценён")
+    full = await evaluation_service.get_evaluation(session, ev.id)
+    return ser.evaluation(full)  # type: ignore[arg-type]
+
+
+@router.get("/{dialog_id}/evaluations")
+async def evaluation_history(dialog_id: str, session: SessionDep):
+    """All evaluations of the dialog, newest first (including in-progress and failed)."""
+    await _get_or_404(session, dialog_id)
+    rows, _ = await evaluation_service.list_evaluations(session, dialog_id=dialog_id, limit=500)
+    return [ser.evaluation_brief(ev) for ev in rows]
+
+
 @router.get("/{dialog_id}/audio")
-async def stream_audio(dialog_id: str, session: SessionDep):
-    """Proxy the call recording so the browser can play it without CORS issues."""
-    d = await dialog_service.get_dialog(session, dialog_id)
-    if d is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "dialog not found")
+async def get_audio(dialog_id: str, session: SessionDep):
+    """Direct media link for a voice call, extracted from the organizer's player page."""
+    d = await _get_or_404(session, dialog_id)
     if not d.audio_url:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "dialog has no recording")
+        return {"url": None, "player_url": None, "expires_at": None}
+    resolved = await resolve_audio(d.audio_url)
+    return {
+        "url": resolved.url,
+        "player_url": resolved.player_url,
+        "stream_url": f"/api/dialogs/{dialog_id}/audio/stream",
+        "expires_at": (
+            ser.iso(datetime.fromtimestamp(resolved.expires_at, UTC)) if resolved.url else None
+        ),
+    }
+
+
+@router.get("/{dialog_id}/audio/stream")
+async def stream_audio(dialog_id: str, session: SessionDep):
+    """Proxy the recording bytes through the backend (fallback if the direct link is blocked)."""
+    d = await _get_or_404(session, dialog_id)
+    if not d.audio_url:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "У диалога нет записи")
+    resolved = await resolve_audio(d.audio_url)
+    if not resolved.url:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, "Не удалось получить ссылку на запись")
 
     client = httpx.AsyncClient(timeout=httpx.Timeout(60.0, read=600.0), follow_redirects=True)
     try:
-        req = client.build_request("GET", d.audio_url)
-        upstream = await client.send(req, stream=True)
+        upstream = await client.send(client.build_request("GET", resolved.url), stream=True)
     except httpx.HTTPError as exc:
         await client.aclose()
-        raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, f"could not fetch recording: {exc}"
-        ) from exc
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Запись недоступна: {exc}") from exc
     if upstream.status_code >= 400:
         await upstream.aclose()
         await client.aclose()
         raise HTTPException(
-            status.HTTP_502_BAD_GATEWAY, f"recording source returned {upstream.status_code}"
+            status.HTTP_502_BAD_GATEWAY, f"Источник записи ответил {upstream.status_code}"
         )
 
     async def body():
@@ -168,9 +168,10 @@ async def stream_audio(dialog_id: str, session: SessionDep):
             await upstream.aclose()
             await client.aclose()
 
-    headers = {}
-    for h in ("content-type", "content-length", "accept-ranges"):
-        if h in upstream.headers:
-            headers[h] = upstream.headers[h]
+    headers = {
+        h: upstream.headers[h]
+        for h in ("content-type", "content-length", "accept-ranges")
+        if h in upstream.headers
+    }
     headers.setdefault("content-type", "audio/mpeg")
     return StreamingResponse(body(), headers=headers)

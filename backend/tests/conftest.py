@@ -44,8 +44,8 @@ async def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> AsyncIterat
 @pytest.fixture
 async def seeded(client: AsyncClient, dev_dataset: dict) -> AsyncClient:
     """Client with the 65 dev dialogs imported."""
-    r = await client.post("/api/v1/dialogs", json=dev_dataset["data"]["records"])
-    assert r.status_code == 201, r.text
+    r = await client.post("/api/datasets/upload", json={"name": "DEV", "payload": dev_dataset})
+    assert r.status_code == 200, r.text
     return client
 
 

@@ -1,110 +1,76 @@
-from fastapi import APIRouter, HTTPException, status
+from typing import Any
 
+from fastapi import APIRouter, Body, HTTPException, status
+
+from app.api import serializers as ser
 from app.api.deps import SessionDep
-from app.models import Checklist
-from app.schemas.checklist import ChecklistIn, ChecklistOut, ChecklistSummary
 from app.services import checklists as checklist_service
+from app.services.checklist_document import (
+    DocumentError,
+    document_to_checklist_in,
+    load_default_document,
+)
 
 router = APIRouter(prefix="/checklists", tags=["checklists"])
 
 
-def _summary(c: Checklist) -> ChecklistSummary:
-    s = ChecklistSummary.model_validate(c)
-    s.criteria_count = len(c.criteria)
-    s.total_weight = round(sum(x.weight for x in c.criteria if not x.is_flag), 2)
-    return s
-
-
-def _out(c: Checklist) -> ChecklistOut:
-    out = ChecklistOut.model_validate(c)
-    out.criteria_count = len(c.criteria)
-    out.total_weight = round(sum(x.weight for x in c.criteria if not x.is_flag), 2)
-    return out
-
-
-async def _get_or_404(session, checklist_id: int) -> Checklist:
-    c = await checklist_service.get_checklist(session, checklist_id)
-    if c is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "checklist not found")
-    return c
-
-
-@router.get("", response_model=list[ChecklistSummary])
-async def list_checklists(session: SessionDep):
-    return [_summary(c) for c in await checklist_service.list_checklists(session)]
-
-
-@router.get("/default", response_model=ChecklistOut)
-async def get_default(session: SessionDep):
-    c = await checklist_service.get_default_checklist(session)
-    if c is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no default checklist")
-    return _out(c)
-
-
-@router.get("/{checklist_id}", response_model=ChecklistOut)
-async def get_checklist(checklist_id: int, session: SessionDep):
-    return _out(await _get_or_404(session, checklist_id))
-
-
-@router.post("", response_model=ChecklistOut, status_code=status.HTTP_201_CREATED)
-async def create_checklist(body: ChecklistIn, session: SessionDep, make_default: bool = False):
-    c = await checklist_service.create_checklist(session, body, make_default=make_default)
+@router.get("/active")
+async def active_checklist(session: SessionDep):
+    """The checklist document used for new evaluations (latest version)."""
+    checklist = await checklist_service.ensure_default_checklist(session)
+    doc = await checklist_service.current_document(session, checklist)
     await session.commit()
-    return _out(await _get_or_404(session, c.id))
+    return doc
 
 
-@router.put("/{checklist_id}", response_model=ChecklistOut)
-async def update_checklist(checklist_id: int, body: ChecklistIn, session: SessionDep):
-    """Replace the checklist configuration. Past evaluations keep their own snapshot."""
-    c = await _get_or_404(session, checklist_id)
-    await checklist_service.update_checklist(session, c, body)
+@router.get("/active/versions")
+async def checklist_versions(session: SessionDep):
+    checklist = await checklist_service.ensure_default_checklist(session)
+    await checklist_service.current_document(session, checklist)
     await session.commit()
-    return _out(await _get_or_404(session, checklist_id))
+    return [
+        {
+            "version": v.version,
+            "name": v.name,
+            "updated_at": v.document.get("updated_at") or ser.iso(v.created_at),
+            "criteria": len(v.document.get("criteria", [])),
+        }
+        for v in await checklist_service.list_versions(session, checklist.id)
+    ]
 
 
-@router.post(
-    "/{checklist_id}/duplicate", response_model=ChecklistOut, status_code=status.HTTP_201_CREATED
-)
-async def duplicate_checklist(checklist_id: int, session: SessionDep, name: str | None = None):
-    src = await _get_or_404(session, checklist_id)
-    data = ChecklistIn(
-        name=name or f"{src.name} (copy)",
-        description=src.description,
-        criteria=[
-            {
-                "code": x.code,
-                "title": x.title,
-                "rule": x.rule,
-                "section": x.section,
-                "answer_type": x.answer_type,
-                "scale_max": x.scale_max,
-                "scale_steps": x.scale_steps,
-                "weight": x.weight,
-                "allow_na": x.allow_na,
-                "na_rule": x.na_rule,
-                "is_flag": x.is_flag,
-            }
-            for x in src.criteria
-        ],
+@router.get("/active/versions/{version}")
+async def checklist_version(version: int, session: SessionDep):
+    """A specific version's document (what an old evaluation was scored against)."""
+    checklist = await checklist_service.ensure_default_checklist(session)
+    doc = await checklist_service.get_version_document(session, checklist.id, version)
+    if doc is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Версии v{version} нет")
+    return doc
+
+
+@router.put("/active")
+async def save_checklist(session: SessionDep, body: dict[str, Any] = Body(...)):
+    """Save the edited document as a new version (version + 1). Past evaluations keep theirs."""
+    checklist = await checklist_service.ensure_default_checklist(session)
+    try:
+        data = document_to_checklist_in(body)
+    except DocumentError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "; ".join(exc.errors)) from exc
+    await checklist_service.update_checklist(session, checklist, data, document=body)
+    doc = await checklist_service.current_document(session, checklist)
+    await session.commit()
+    return doc
+
+
+@router.post("/active/reset")
+async def reset_checklist(session: SessionDep):
+    """New version from the original PDF checklist (data/checklist.default.json)."""
+    checklist = await checklist_service.ensure_default_checklist(session)
+    default = load_default_document()
+    await checklist_service.update_checklist(
+        session, checklist, document_to_checklist_in(default), document=default
     )
-    c = await checklist_service.create_checklist(session, data)
+    doc = await checklist_service.current_document(session, checklist)
     await session.commit()
-    return _out(await _get_or_404(session, c.id))
-
-
-@router.post("/{checklist_id}/default", response_model=ChecklistOut)
-async def make_default(checklist_id: int, session: SessionDep):
-    await _get_or_404(session, checklist_id)
-    await checklist_service.set_default(session, checklist_id)
-    await session.commit()
-    return _out(await _get_or_404(session, checklist_id))
-
-
-@router.delete("/{checklist_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_checklist(checklist_id: int, session: SessionDep):
-    c = await _get_or_404(session, checklist_id)
-    if c.is_default:
-        raise HTTPException(status.HTTP_409_CONFLICT, "cannot delete the default checklist")
-    await session.delete(c)
-    await session.commit()
+    return doc

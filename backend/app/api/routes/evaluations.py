@@ -1,182 +1,171 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from app.api.deps import MLDep, QueueDep, SessionDep
-from app.models import Dialog
+from app.api import serializers as ser
+from app.api.deps import QueueDep, SessionDep, SettingsDep
+from app.models import Dialog, Evaluation
 from app.models.evaluation import EvaluationStatus
-from app.schemas.common import Page
-from app.schemas.evaluation import (
-    AppealBrief,
-    AppealCreate,
-    EvaluationBatchCreate,
-    EvaluationBatchResult,
-    EvaluationCreate,
-    EvaluationListItem,
-    EvaluationOut,
-)
-from app.services import appeals as appeal_service
 from app.services import checklists as checklist_service
 from app.services import dialogs as dialog_service
 from app.services import evaluations as evaluation_service
 
 router = APIRouter(prefix="/evaluations", tags=["evaluations"])
 
-
-async def _resolve_checklist(session, checklist_id: int | None):
-    if checklist_id is None:
-        c = await checklist_service.get_default_checklist(session)
-        if c is None:
-            raise HTTPException(status.HTTP_409_CONFLICT, "no default checklist; create one first")
-        return c
-    c = await checklist_service.get_checklist(session, checklist_id)
-    if c is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "checklist not found")
-    return c
+# Serialises "find in-flight or create" per dialog so concurrent clicks share one evaluation.
+_locks: dict[str, asyncio.Lock] = {}
 
 
-async def _get_or_404(session, evaluation_id: int):
+class EvaluateBody(BaseModel):
+    conversation_id: str
+    # The UI sends the document id ("chat-quality"); the active checklist is always used.
+    checklist_id: str | int | None = None
+
+
+class BatchBody(BaseModel):
+    conversation_ids: list[str] | None = Field(
+        default=None, description="Omit to evaluate every dialog"
+    )
+    only_new: bool = Field(
+        default=False,
+        description="Skip dialogs already evaluated with the current checklist version",
+    )
+
+
+async def _get_or_404(session, evaluation_id: int) -> Evaluation:
     ev = await evaluation_service.get_evaluation(session, evaluation_id)
     if ev is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "evaluation not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Оценка не найдена")
     return ev
 
 
-@router.post("", response_model=EvaluationOut, status_code=status.HTTP_202_ACCEPTED)
-async def create_evaluation(body: EvaluationCreate, session: SessionDep, queue: QueueDep):
-    """Queue an evaluation of one dialog. Poll GET /evaluations/{id} until status is completed."""
-    dialog = await dialog_service.get_dialog(session, body.dialog_id)
-    if dialog is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "dialog not found")
-    checklist = await _resolve_checklist(session, body.checklist_id)
-    ev = await evaluation_service.create_evaluation(session, dialog, checklist)
-    await session.commit()
-    queue.enqueue(ev.id)
-    return EvaluationOut.model_validate(await _get_or_404(session, ev.id))
+@router.post("")
+async def evaluate(body: EvaluateBody, session: SessionDep, queue: QueueDep, settings: SettingsDep):
+    """Evaluate a dialog with the active checklist.
+
+    The evaluation is queued and this request waits up to EVALUATION_WAIT_S for the verdict.
+    If the model is slower than that, the in-progress evaluation is returned with
+    status "queued" / "running" and the client should poll GET /evaluations/{id}.
+    """
+    d = await dialog_service.get_dialog(session, body.conversation_id)
+    if d is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"Диалог {body.conversation_id} не найден")
+    checklist = await checklist_service.ensure_default_checklist(session)
+
+    lock = _locks.setdefault(d.id, asyncio.Lock())
+    async with lock:
+        in_flight = await session.scalar(
+            select(Evaluation)
+            .where(
+                Evaluation.dialog_id == d.id,
+                Evaluation.checklist_id == checklist.id,
+                Evaluation.status.in_([EvaluationStatus.queued, EvaluationStatus.running]),
+            )
+            .order_by(Evaluation.id.desc())
+        )
+        if (
+            in_flight is not None
+            and in_flight.checklist_snapshot.get("version") == checklist.version
+        ):
+            ev_id = in_flight.id
+        else:
+            ev = await evaluation_service.create_evaluation(session, d, checklist)
+            await session.commit()
+            ev_id = ev.id
+            queue.enqueue(ev_id)
+
+    await queue.wait(ev_id, settings.evaluation_wait_s)
+    session.expire_all()
+    full = await _get_or_404(session, ev_id)
+    if full.status == EvaluationStatus.failed:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, f"Оценка не выполнена: {full.error}")
+    return ser.evaluation(full)
 
 
-@router.post("/sync", response_model=EvaluationOut)
-async def evaluate_now(body: EvaluationCreate, session: SessionDep, ml: MLDep):
-    """Evaluate one dialog synchronously (blocks until the model answers). Handy for demos."""
-    dialog = await dialog_service.get_dialog(session, body.dialog_id)
-    if dialog is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "dialog not found")
-    checklist = await _resolve_checklist(session, body.checklist_id)
-    ev = await evaluation_service.create_evaluation(session, dialog, checklist)
-    await session.commit()
-    ev = await evaluation_service.run_evaluation(session, ev.id, ml)
-    return EvaluationOut.model_validate(ev)
-
-
-@router.post("/batch", response_model=EvaluationBatchResult, status_code=status.HTTP_202_ACCEPTED)
-async def create_batch(body: EvaluationBatchCreate, session: SessionDep, queue: QueueDep):
-    """Queue evaluations for many dialogs (all of them when dialog_ids is omitted)."""
-    checklist = await _resolve_checklist(session, body.checklist_id)
+@router.post("/batch", status_code=status.HTTP_202_ACCEPTED)
+async def evaluate_batch(body: BatchBody, session: SessionDep, queue: QueueDep):
+    """Queue many dialogs (all when conversation_ids is omitted); poll /evaluations/batch/{id}."""
+    checklist = await checklist_service.ensure_default_checklist(session)
     stmt = select(Dialog).order_by(Dialog.id)
-    if body.dialog_ids:
-        stmt = stmt.where(Dialog.id.in_(body.dialog_ids))
+    if body.conversation_ids:
+        stmt = stmt.where(Dialog.id.in_(body.conversation_ids))
     dialogs = list((await session.scalars(stmt)).all())
-    if body.dialog_ids:
-        missing = sorted(set(body.dialog_ids) - {d.id for d in dialogs})
+    if body.conversation_ids:
+        missing = sorted(set(body.conversation_ids) - {d.id for d in dialogs})
         if missing:
             raise HTTPException(
-                status.HTTP_404_NOT_FOUND, f"dialogs not found: {', '.join(missing)}"
+                status.HTTP_404_NOT_FOUND, f"Диалоги не найдены: {', '.join(missing)}"
             )
     if not dialogs:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "no dialogs to evaluate")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Нет диалогов для оценки")
     batch_id, created, skipped = await evaluation_service.create_batch(
-        session, dialogs, checklist, skip_evaluated=body.skip_evaluated
+        session, dialogs, checklist, skip_evaluated=body.only_new
     )
     await session.commit()
     queue.enqueue_many(e.id for e in created)
-    return EvaluationBatchResult(
-        batch_id=batch_id,
-        checklist_id=checklist.id,
-        evaluation_ids=[e.id for e in created],
-        queued=len(created),
-        skipped=skipped,
-    )
+    return {
+        "batch_id": batch_id,
+        "checklist_version": checklist.version,
+        "queued": len(created),
+        "skipped": skipped,
+        "evaluation_ids": [e.id for e in created],
+    }
 
 
 @router.get("/batch/{batch_id}")
 async def batch_status(batch_id: str, session: SessionDep):
     counts = await evaluation_service.batch_progress(session, batch_id)
     if counts["total"] == 0:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "batch not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Батч не найден")
     done = counts["completed"] + counts["failed"]
     return {"batch_id": batch_id, **counts, "done": done, "finished": done == counts["total"]}
 
 
-@router.get("", response_model=Page[EvaluationListItem])
+@router.get("")
 async def list_evaluations(
     session: SessionDep,
-    dialog_id: str | None = None,
-    checklist_id: int | None = None,
+    conversation_id: str | None = None,
     batch_id: str | None = None,
     status_filter: str | None = Query(
-        default=None, alias="status", description="queued|running|completed|failed"
+        default=None, alias="status", description="queued | running | completed | failed"
     ),
-    limit: int = Query(default=100, ge=1, le=500),
+    limit: int = Query(default=200, ge=1, le=2000),
     offset: int = Query(default=0, ge=0),
 ):
-    rows, total = await evaluation_service.list_evaluations(
+    if status_filter and status_filter not in EvaluationStatus.__members__:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, "status: queued | running | completed | failed"
+        )
+    rows, _ = await evaluation_service.list_evaluations(
         session,
-        dialog_id=dialog_id,
-        checklist_id=checklist_id,
+        dialog_id=conversation_id,
         batch_id=batch_id,
         status=status_filter,
         limit=limit,
         offset=offset,
     )
-    return Page(
-        items=[EvaluationListItem.model_validate(r) for r in rows],
-        total=total,
-        limit=limit,
-        offset=offset,
-    )
+    return [ser.evaluation_brief(ev) for ev in rows]
 
 
-@router.get("/{evaluation_id}", response_model=EvaluationOut)
+@router.get("/{evaluation_id}")
 async def get_evaluation(evaluation_id: int, session: SessionDep):
-    return EvaluationOut.model_validate(await _get_or_404(session, evaluation_id))
+    """Full evaluation; poll this while status is queued / running."""
+    return ser.evaluation(await _get_or_404(session, evaluation_id))
 
 
-@router.post(
-    "/{evaluation_id}/retry", response_model=EvaluationOut, status_code=status.HTTP_202_ACCEPTED
-)
+@router.post("/{evaluation_id}/retry", status_code=status.HTTP_202_ACCEPTED)
 async def retry_evaluation(evaluation_id: int, session: SessionDep, queue: QueueDep):
-    """Re-queue a failed evaluation."""
+    """Re-queue a failed evaluation (e.g. after the model came back)."""
     ev = await _get_or_404(session, evaluation_id)
-    if ev.status.value != "failed":
+    if ev.status != EvaluationStatus.failed:
         raise HTTPException(
-            status.HTTP_409_CONFLICT, f"evaluation is {ev.status.value}, not failed"
+            status.HTTP_409_CONFLICT,
+            f"Оценка в статусе {ev.status.value}, повторить можно только failed",
         )
     ev.status = EvaluationStatus.queued
     ev.error = None
     await session.commit()
     queue.enqueue(ev.id)
-    return EvaluationOut.model_validate(await _get_or_404(session, evaluation_id))
-
-
-@router.delete("/{evaluation_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_evaluation(evaluation_id: int, session: SessionDep):
-    ev = await _get_or_404(session, evaluation_id)
-    if ev.status.value in ("queued", "running"):
-        raise HTTPException(status.HTTP_409_CONFLICT, "evaluation is still in progress")
-    await session.delete(ev)
-    await session.commit()
-
-
-@router.post(
-    "/{evaluation_id}/appeals", response_model=AppealBrief, status_code=status.HTTP_201_CREATED
-)
-async def create_appeal(evaluation_id: int, body: AppealCreate, session: SessionDep):
-    """Dispute one criterion verdict. The reviewer picks it up from GET /appeals?status=pending."""
-    ev = await _get_or_404(session, evaluation_id)
-    try:
-        appeal = await appeal_service.create_appeal(
-            session, ev, body.criterion_result_id, body.comment
-        )
-    except appeal_service.AppealError as exc:
-        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
-    await session.commit()
-    return AppealBrief.model_validate(appeal)
+    return ser.evaluation(await _get_or_404(session, evaluation_id))

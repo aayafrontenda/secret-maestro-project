@@ -36,6 +36,9 @@ class Settings(BaseSettings):
 
     # In-process evaluation queue.
     queue_workers: int = Field(default=3, ge=1, le=32)
+    # How long POST /api/evaluations waits for the result before returning the in-progress
+    # evaluation. Keep it under proxy limits (Cloudflare closes requests after ~100 s).
+    evaluation_wait_s: float = Field(default=85.0, ge=0, le=600)
 
     # Seed the default checklist on startup if none exist.
     seed_default_checklist: bool = True

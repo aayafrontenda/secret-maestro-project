@@ -1,8 +1,4 @@
-from datetime import datetime
-
 from pydantic import BaseModel, Field, field_validator
-
-from app.schemas.common import ORMModel
 
 # Known values; unknown ones are accepted after normalisation so an unexpected control
 # dataset never fails to import.
@@ -92,49 +88,3 @@ class DialogIn(BaseModel):
     @classmethod
     def _audio(cls, v: object) -> str | None:
         return v or None
-
-
-class DialogSummary(ORMModel):
-    id: str
-    dataset_group_id: str | None
-    channel: str
-    language: str
-    message_count: int
-    audio_url: str | None
-    source: str
-    created_at: datetime
-    # Latest evaluation, if any.
-    latest_evaluation: "EvaluationBrief | None" = None
-
-
-class DialogDetail(DialogSummary):
-    transcript: list[TranscriptMessage]
-    evaluations: list["EvaluationBrief"] = []
-
-
-class EvaluationBrief(ORMModel):
-    id: int
-    status: str
-    checklist_id: int | None
-    original_total: float | None
-    final_total: float | None
-    grave_error: bool
-    final_grave_error: bool
-    created_at: datetime
-    completed_at: datetime | None
-
-
-class ImportRequest(BaseModel):
-    group_id: str = Field(default="DEV", min_length=1, max_length=64)
-
-
-class ImportResult(BaseModel):
-    dataset_group_id: str | None
-    received: int
-    created: int
-    updated: int
-    ids: list[str]
-
-
-DialogSummary.model_rebuild()
-DialogDetail.model_rebuild()

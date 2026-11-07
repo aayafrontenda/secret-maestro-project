@@ -28,6 +28,7 @@ class EvaluationQueue:
         self._queue: asyncio.Queue[int] = asyncio.Queue()
         self._tasks: list[asyncio.Task[None]] = []
         self._inflight: set[int] = set()
+        self._done_events: dict[int, asyncio.Event] = {}
         self._processed = 0
         self._failed = 0
 
@@ -65,6 +66,22 @@ class EvaluationQueue:
         """Wait until every enqueued evaluation has been processed (used in tests)."""
         await self._queue.join()
 
+    async def wait(self, evaluation_id: int, timeout_s: float) -> bool:
+        """Block until the evaluation finishes or the timeout passes. Returns True if finished."""
+        event = self._done_events.setdefault(evaluation_id, asyncio.Event())
+        try:
+            await asyncio.wait_for(event.wait(), timeout_s)
+            return True
+        except TimeoutError:
+            return False
+
+    def _mark_done(self, evaluation_id: int) -> None:
+        # Keep the set event so a waiter that arrives late returns immediately.
+        self._done_events.setdefault(evaluation_id, asyncio.Event()).set()
+        if len(self._done_events) > 5000:
+            for key in [k for k, e in self._done_events.items() if e.is_set()][:2500]:
+                del self._done_events[key]
+
     def stats(self) -> dict[str, int]:
         return {
             "workers": len(self._tasks),
@@ -96,4 +113,5 @@ class EvaluationQueue:
                 )
             finally:
                 self._inflight.discard(evaluation_id)
+                self._mark_done(evaluation_id)
                 self._queue.task_done()

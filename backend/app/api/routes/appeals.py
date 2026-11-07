@@ -1,91 +1,99 @@
-from fastapi import APIRouter, HTTPException, Query, status
+from typing import Any
 
+from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel, Field
+
+from app.api import serializers as ser
 from app.api.deps import SessionDep
-from app.models import Appeal
-from app.schemas.common import Page
-from app.schemas.evaluation import AppealDecision, AppealDetail, AppealOut
+from app.schemas.appeal import AppealDecision
 from app.services import appeals as appeal_service
-from app.services.dialogs import transcript_fragment
+from app.services import evaluations as evaluation_service
 
 router = APIRouter(prefix="/appeals", tags=["appeals"])
 
 
-def _out(a: Appeal) -> AppealOut:
-    return AppealOut(
-        id=a.id,
-        evaluation_id=a.evaluation_id,
-        criterion_result_id=a.criterion_result_id,
-        criterion_code=a.criterion_result.criterion_code,
-        criterion_title=a.criterion_result.criterion_title,
-        dialog_id=a.evaluation.dialog_id,
-        comment=a.comment,
-        status=a.status.value,
-        previous_answer=a.previous_answer,
-        new_answer=a.new_answer,
-        decision_reason=a.decision_reason,
-        created_at=a.created_at,
-        decided_at=a.decided_at,
-    )
+class AppealBody(BaseModel):
+    evaluation_id: int
+    conversation_id: str | None = None
+    criterion_id: str
+    comment: str = Field(min_length=1, max_length=4000)
 
 
-def _detail(a: Appeal) -> AppealDetail:
-    r = a.criterion_result
-    ev = a.evaluation
-    spec = next((c for c in ev.checklist_snapshot["criteria"] if c["code"] == r.criterion_code), {})
-    indexes = [e["message_index"] for e in r.evidence]
-    if r.checked_range:
-        indexes += [r.checked_range["from_index"], r.checked_range["to_index"]]
-    return AppealDetail(
-        **_out(a).model_dump(),
-        explanation=r.explanation,
-        evidence=r.evidence,
-        checked_range=r.checked_range,
-        original_score=r.score,
-        weight=r.weight,
-        answer_type=r.answer_type,
-        scale_max=spec.get("scale_max"),
-        allow_na=bool(spec.get("allow_na")),
-        is_flag=r.is_flag,
-        fragment=transcript_fragment(ev.dialog.transcript, indexes),
-        evaluation_original_total=ev.original_total,
-        evaluation_final_total=ev.final_total,
-    )
+class DecisionBody(BaseModel):
+    action: str = Field(description="confirm | change")
+    answer: Any | None = None
+    reason: str = Field(min_length=1, max_length=4000)
 
 
-@router.get("", response_model=Page[AppealOut])
+@router.get("")
 async def list_appeals(
     session: SessionDep,
-    status_filter: str | None = Query(
-        default=None, alias="status", description="pending|confirmed|changed"
-    ),
     evaluation_id: int | None = None,
-    limit: int = Query(default=100, ge=1, le=500),
-    offset: int = Query(default=0, ge=0),
+    status_filter: str | None = Query(
+        default=None, alias="status", description="open | confirmed | changed"
+    ),
+    limit: int = Query(default=500, ge=1, le=2000),
 ):
-    rows, total = await appeal_service.list_appeals(
-        session, status=status_filter, evaluation_id=evaluation_id, limit=limit, offset=offset
+    internal = None
+    if status_filter:
+        if status_filter not in ser.UI_TO_APPEAL_STATUS:
+            raise HTTPException(
+                status.HTTP_422_UNPROCESSABLE_CONTENT, "status: open | confirmed | changed"
+            )
+        internal = ser.UI_TO_APPEAL_STATUS[status_filter].value
+    rows, _ = await appeal_service.list_appeals(
+        session, status=internal, evaluation_id=evaluation_id, limit=limit
     )
-    return Page(items=[_out(a) for a in rows], total=total, limit=limit, offset=offset)
+    return [ser.appeal(a) for a in reversed(rows)]
 
 
-@router.get("/{appeal_id}", response_model=AppealDetail)
+@router.get("/{appeal_id}")
 async def get_appeal(appeal_id: int, session: SessionDep):
     a = await appeal_service.get_appeal(session, appeal_id)
     if a is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "appeal not found")
-    return _detail(a)
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Апелляция не найдена")
+    return ser.appeal(a)
 
 
-@router.post("/{appeal_id}/decision", response_model=AppealDetail)
-async def decide(appeal_id: int, body: AppealDecision, session: SessionDep):
+@router.post("")
+async def create_appeal(body: AppealBody, session: SessionDep):
+    """Dispute one criterion verdict. Reviewers pick it up from GET /appeals?status=open."""
+    ev = await evaluation_service.get_evaluation(session, body.evaluation_id)
+    if ev is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Оценка не найдена")
+    result = next((r for r in ev.results if r.criterion_code == body.criterion_id), None)
+    if result is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"Критерий {body.criterion_id} не найден в оценке"
+        )
+    try:
+        appeal = await appeal_service.create_appeal(session, ev, result.id, body.comment)
+    except appeal_service.AppealError as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
+    await session.commit()
+    return ser.appeal(appeal)
+
+
+@router.post("/{appeal_id}/decision")
+async def decide_appeal(appeal_id: int, body: DecisionBody, session: SessionDep):
     """Reviewer confirms or changes the verdict; the evaluation's final total is recalculated."""
     a = await appeal_service.get_appeal(session, appeal_id)
     if a is None:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, "appeal not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Апелляция не найдена")
+    if body.action not in ("confirm", "change"):
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, "action: confirm | change")
     try:
-        a = await appeal_service.decide_appeal(session, a, body)
+        decision = AppealDecision(
+            decision=body.action,  # type: ignore[arg-type]
+            new_answer=body.answer if body.action == "change" else None,
+            reason=body.reason,
+        )
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, str(exc)) from exc
+    try:
+        await appeal_service.decide_appeal(session, a, decision)
     except appeal_service.AppealError as exc:
         raise HTTPException(status.HTTP_409_CONFLICT, str(exc)) from exc
     await session.commit()
     a = await appeal_service.get_appeal(session, appeal_id)
-    return _detail(a)  # type: ignore[arg-type]
+    return ser.appeal(a)  # type: ignore[arg-type]

@@ -9,8 +9,6 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from app.schemas.common import AnswerValue
-
 
 class MLTranscriptMessage(BaseModel):
     index: int
@@ -48,7 +46,8 @@ class MLRange(BaseModel):
 
 class MLCriterionResult(BaseModel):
     code: str
-    answer: AnswerValue
+    # "yes" / "no" / "na" / number; other spellings ("Да", "N/A", "15") are normalised.
+    answer: str | int | float
     explanation: str = ""
     evidence: list[int] = Field(
         default_factory=list, description="Transcript message indexes supporting the verdict"

@@ -7,7 +7,7 @@ from sqlalchemy.orm import selectinload
 from app.models import Appeal, CriterionResult, Evaluation
 from app.models.appeal import AppealStatus
 from app.models.evaluation import EvaluationStatus
-from app.schemas.evaluation import AppealDecision
+from app.schemas.appeal import AppealDecision
 from app.services import evaluations as evaluation_service
 from app.services.scoring import CriterionSpec, ScoringError, normalize_answer
 

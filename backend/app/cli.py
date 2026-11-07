@@ -88,7 +88,7 @@ async def cmd_export_checklist(args: argparse.Namespace) -> None:
     async with get_session_factory()() as session:
         checklist = await checklist_service.ensure_default_checklist(session)
         await session.commit()
-        data = checklist_service.snapshot(checklist)
+        data = await checklist_service.snapshot(session, checklist)
     out = Path(args.out) if args.out else None
     text = json.dumps(data, ensure_ascii=False, indent=2)
     if out:

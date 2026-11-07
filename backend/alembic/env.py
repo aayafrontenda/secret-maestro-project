@@ -11,7 +11,7 @@ from app.models import *  # noqa: F401,F403 — register all tables on Base.meta
 
 config = context.config
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # The app injects the URL via config.attributes; the CLI falls back to settings (.env / env vars).
 config.set_main_option(

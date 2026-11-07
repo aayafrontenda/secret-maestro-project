@@ -1,138 +1,22 @@
+from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.models import Checklist, Criterion
+from app.models import Checklist, ChecklistVersion, Criterion
 from app.schemas.checklist import ChecklistIn, CriterionIn
-
-# Initial configuration from the Freedom Broker "Chat quality checklist" PDF.
-DEFAULT_CHECKLIST = ChecklistIn(
-    name="Freedom Broker — Chat Quality (default)",
-    description="Eight criteria for evaluating an operator in a chat. Weights sum to 100; "
-    "N/A weight is redistributed among applicable criteria.",
-    criteria=[
-        CriterionIn(
-            code="c1",
-            title="Установление контакта",
-            section="Начало и понимание запроса",
-            answer_type="yes_no",
-            weight=10,
-            allow_na=False,
-            rule="Да — оператор поздоровался на языке клиента и представился в первом ответе.",
-        ),
-        CriterionIn(
-            code="c2",
-            title="Выявление потребности",
-            section="Начало и понимание запроса",
-            answer_type="yes_no",
-            weight=15,
-            allow_na=True,
-            rule="Да — оператор учёл известные детали и уточнил недостающее до ответа.",
-            na_rule="N/A — данных для ответа хватало с самого начала.",
-        ),
-        CriterionIn(
-            code="c3",
-            title="Идентификация",
-            section="Безопасность и решение",
-            answer_type="yes_no",
-            weight=20,
-            allow_na=True,
-            rule="Да — проверка личности подтверждена до раскрытия данных или защищённого "
-            "действия. Если проверка требовалась, но не подтверждена в чате — Нет.",
-            na_rule="N/A — запрос не требовал идентификации (например, общий вопрос о тарифах).",
-        ),
-        CriterionIn(
-            code="c4",
-            title="Корректная и полная консультация",
-            section="Безопасность и решение",
-            answer_type="scale",
-            scale_max=20,
-            weight=20,
-            allow_na=True,
-            scale_steps=[
-                {
-                    "value": 20,
-                    "label": "Все существенные вопросы закрыты или дан корректный следующий шаг.",
-                },
-                {"value": 15, "label": "Основной вопрос решён, пропущена второстепенная деталь."},
-                {
-                    "value": 10,
-                    "label": "Часть запроса закрыта, существенный вопрос остался открытым.",
-                },
-                {
-                    "value": 5,
-                    "label": "Есть общая подсказка, но клиенту всё ещё непонятно, как действовать.",
-                },
-                {"value": 0, "label": "Ответа по существу нет или ключевая рекомендация ошибочна."},
-            ],
-            rule="Оцените ответ или следующий шаг по шкале 0–20.",
-            na_rule="N/A — чат закончился до того, как клиент сформулировал запрос.",
-        ),
-        CriterionIn(
-            code="c5",
-            title="Эмпатия и клиентоориентированность",
-            section="Ведение и завершение диалога",
-            answer_type="yes_no",
-            weight=15,
-            allow_na=False,
-            rule="Да — оператор вежлив и, если клиент выразил недовольство или описал неудобство, "
-            "отреагировал на конкретную проблему.",
-        ),
-        CriterionIn(
-            code="c6",
-            title="Управление диалогом, скорость и грамотность",
-            section="Ведение и завершение диалога",
-            answer_type="scale",
-            scale_max=10,
-            weight=15,
-            allow_na=False,
-            scale_steps=[
-                {
-                    "value": 10,
-                    "label": "Ответы ясные и связные. Если было явное ожидание, "
-                    "оператор предупредил.",
-                },
-                {
-                    "value": 7,
-                    "label": "Один заметный сбой, но клиент может понять ответ и продолжить.",
-                },
-                {
-                    "value": 4,
-                    "label": "Клиенту приходится переспрашивать из-за формулировок "
-                    "или порядка ответов.",
-                },
-                {
-                    "value": 0,
-                    "label": "Из-за бессвязных или противоречивых реплик ход диалога непонятен.",
-                },
-            ],
-            rule="Оцените ясность, порядок ответов и предупреждение об ожидании по шкале 0–10.",
-        ),
-        CriterionIn(
-            code="c7",
-            title="Завершение",
-            section="Ведение и завершение диалога",
-            answer_type="yes_no",
-            weight=5,
-            allow_na=True,
-            rule="Да — оператор подвёл итог или предложил дальнейшую помощь и попрощался.",
-            na_rule="N/A — чат оборвался до возможности его завершить.",
-        ),
-        CriterionIn(
-            code="c8",
-            title="Грубые ошибки",
-            section="Грубые нарушения",
-            answer_type="yes_no",
-            weight=0,
-            allow_na=False,
-            is_flag=True,
-            rule="Да — выявлено оскорбление клиента, предложение платной услуги в обход компании "
-            "или раскрытие конфиденциальной информации. Нет — ни одно из трёх не выявлено.",
-        ),
-    ],
+from app.services.checklist_document import (
+    document_from_checklist,
+    document_to_checklist_in,
+    load_default_document,
 )
+
+
+def default_checklist_in() -> ChecklistIn:
+    """The eight criteria from the Freedom Broker PDF (data/checklist.default.json)."""
+    return document_to_checklist_in(load_default_document())
 
 
 def _apply_criteria(checklist: Checklist, criteria: list[CriterionIn]) -> None:
@@ -155,8 +39,32 @@ def _apply_criteria(checklist: Checklist, criteria: list[CriterionIn]) -> None:
     ]
 
 
+def _stamp_document(checklist: Checklist, document: dict[str, Any] | None) -> dict[str, Any]:
+    doc = dict(document) if document else document_from_checklist(checklist)
+    doc["version"] = checklist.version
+    doc["name"] = checklist.name
+    doc["updated_at"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    return doc
+
+
+async def _store_version(
+    session: AsyncSession, checklist: Checklist, document: dict[str, Any] | None
+) -> ChecklistVersion:
+    doc = _stamp_document(checklist, document)
+    row = ChecklistVersion(
+        checklist_id=checklist.id, version=checklist.version, name=checklist.name, document=doc
+    )
+    session.add(row)
+    await session.flush()
+    return row
+
+
 async def create_checklist(
-    session: AsyncSession, data: ChecklistIn, *, make_default: bool = False
+    session: AsyncSession,
+    data: ChecklistIn,
+    *,
+    make_default: bool = False,
+    document: dict[str, Any] | None = None,
 ) -> Checklist:
     checklist = Checklist(name=data.name, description=data.description)
     _apply_criteria(checklist, data.criteria)
@@ -167,12 +75,18 @@ async def create_checklist(
     ):
         await set_default(session, checklist.id)
     await session.refresh(checklist, attribute_names=["criteria", "is_default"])
+    await _store_version(session, checklist, document)
     return checklist
 
 
 async def update_checklist(
-    session: AsyncSession, checklist: Checklist, data: ChecklistIn
+    session: AsyncSession,
+    checklist: Checklist,
+    data: ChecklistIn,
+    *,
+    document: dict[str, Any] | None = None,
 ) -> Checklist:
+    """Replace the configuration and record it as a new version."""
     checklist.name = data.name
     checklist.description = data.description
     checklist.version += 1
@@ -184,6 +98,7 @@ async def update_checklist(
     _apply_criteria(checklist, data.criteria)
     await session.flush()
     await session.refresh(checklist, attribute_names=["criteria"])
+    await _store_version(session, checklist, document)
     return checklist
 
 
@@ -230,11 +145,45 @@ async def ensure_default_checklist(session: AsyncSession) -> Checklist:
     if any_checklist:
         await set_default(session, any_checklist.id)
         return await get_checklist(session, any_checklist.id)  # type: ignore[return-value]
-    return await create_checklist(session, DEFAULT_CHECKLIST, make_default=True)
+    return await create_checklist(
+        session, default_checklist_in(), make_default=True, document=load_default_document()
+    )
 
 
-def snapshot(checklist: Checklist) -> dict[str, Any]:
-    """Immutable copy stored on each evaluation."""
+# --- versions (UI document per version) ---------------------------------------------------------
+
+
+async def list_versions(session: AsyncSession, checklist_id: int) -> list[ChecklistVersion]:
+    stmt = (
+        select(ChecklistVersion)
+        .where(ChecklistVersion.checklist_id == checklist_id)
+        .order_by(ChecklistVersion.version)
+    )
+    return list((await session.scalars(stmt)).all())
+
+
+async def get_version_document(
+    session: AsyncSession, checklist_id: int, version: int
+) -> dict[str, Any] | None:
+    row = await session.scalar(
+        select(ChecklistVersion).where(
+            ChecklistVersion.checklist_id == checklist_id, ChecklistVersion.version == version
+        )
+    )
+    return row.document if row else None
+
+
+async def current_document(session: AsyncSession, checklist: Checklist) -> dict[str, Any]:
+    doc = await get_version_document(session, checklist.id, checklist.version)
+    if doc is None:
+        # Checklist created without a document (e.g. seeded from the CLI): record one now.
+        row = await _store_version(session, checklist, None)
+        doc = row.document
+    return doc
+
+
+async def snapshot(session: AsyncSession, checklist: Checklist) -> dict[str, Any]:
+    """Immutable copy stored on each evaluation (normalised criteria + the UI document)."""
     return {
         "id": checklist.id,
         "name": checklist.name,
@@ -256,4 +205,5 @@ def snapshot(checklist: Checklist) -> dict[str, Any]:
             }
             for c in sorted(checklist.criteria, key=lambda x: x.position)
         ],
+        "document": await current_document(session, checklist),
     }

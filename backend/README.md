@@ -7,7 +7,7 @@ scores with N/A redistribution, and handles the appeal → review → recalculat
 
 - **Stack:** Python 3.11+, FastAPI, SQLAlchemy 2 (async), SQLite (Postgres-ready), Alembic, httpx.
 - **API docs:** `http://localhost:8000/docs` (Swagger) · `/redoc`
-- **Base path:** `/api/v1`
+- **Base path:** `/api` — one API, in the shapes described in [docs/API_CONTRACT.md](../docs/API_CONTRACT.md).
 
 ## Quick start
 
@@ -26,6 +26,19 @@ Or with [uv](https://docs.astral.sh/uv/): `uv sync --extra dev && uv run uvicorn
 Migrations run automatically on startup; the default checklist (the 8 criteria from the
 organizer PDF) is created if none exists.
 
+### Run with the frontend
+
+```bash
+# terminal 1
+cd backend && uvicorn app.main:app --reload --port 8000
+# terminal 2
+cd frontend && python3 -m http.server 5173
+```
+
+In `frontend/js/config.js` set `USE_MOCKS: false` and `API_BASE: 'http://localhost:8000/api'`,
+then open http://localhost:5173. Behind a tunnel (Cloudflare) point `API_BASE` at the public
+backend host; CORS is open by default (`CORS_ORIGINS=*`).
+
 ### Connect the ML service
 
 ```
@@ -40,15 +53,16 @@ The contract is in [`docs/ml-contract.md`](docs/ml-contract.md). With `ML_PROVID
 
 ```bash
 # from the organizer API (set ORGANIZER_API_URL in .env to the GET endpoint)
-curl -X POST localhost:8000/api/v1/dialogs/import -H 'content-type: application/json' \
+curl -X POST localhost:8000/api/datasets/import -H 'content-type: application/json' \
      -d '{"group_id": "CONTROL"}'
 
 # or from a downloaded file
-curl -X POST localhost:8000/api/v1/dialogs/import-file -F file=@control.json
+curl -X POST localhost:8000/api/datasets/upload-file -F file=@control.json
 
-# then evaluate everything that is not evaluated yet
-curl -X POST localhost:8000/api/v1/evaluations/batch -H 'content-type: application/json' \
-     -d '{"skip_evaluated": true}'
+# then evaluate everything not yet scored with the current checklist, and watch progress
+curl -X POST localhost:8000/api/evaluations/batch -H 'content-type: application/json' \
+     -d '{"only_new": true}'
+curl localhost:8000/api/evaluations/batch/<batch_id>
 ```
 
 ## How it works
@@ -68,9 +82,11 @@ curl -X POST localhost:8000/api/v1/evaluations/batch -H 'content-type: applicati
 
 1. **Dialogs** come from the organizer API, a file upload, or a manual POST. Each message gets a
    stable `index`, which is what evidence links point to.
-2. **Checklists** are editable through the API. Every evaluation stores an immutable
-   `checklist_snapshot`, so editing a checklist never changes past results; new evaluations
-   use the new version.
+2. **Checklists** are editable through the API. The UI edits a JSON *document*
+   (`data/checklist.default.json` is v1); every save becomes a new version and the backend derives
+   its normalised criteria from it. Every evaluation stores an immutable `checklist_snapshot`
+   (criteria + document), so editing a checklist never changes past results; new evaluations use
+   the new version.
 3. **Evaluations** are queued (`202 Accepted`) and processed by `QUEUE_WORKERS` async workers.
    The worker sends transcript + criteria to the ML service, normalises the answers, scores them
    and stores per-criterion results with explanation, evidence and the inspected range.
@@ -86,62 +102,73 @@ curl -X POST localhost:8000/api/v1/evaluations/batch -H 'content-type: applicati
 
 ## API overview
 
+Everything lives under `/api`; the request/response shapes are in
+[docs/API_CONTRACT.md](../docs/API_CONTRACT.md). Errors are `{ "error": "<text for a human>" }`
+(FastAPI's `detail` is included too). Interactive docs: `/docs`.
+
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health`, `/queue` | Liveness, ML reachability, queue stats |
-| GET | `/dialogs` | List (filters: `channel`, `language`, `group_id`, `q`; paginated) with latest score |
-| GET | `/dialogs/{id}` | Transcript with message indexes + evaluation history |
-| POST | `/dialogs` | Upload one dialog or a list (organizer record format) |
-| POST | `/dialogs/import` | Fetch a dataset by `group_id` from the organizer API |
-| POST | `/dialogs/import-file` | Upload the organizer JSON file |
-| GET | `/dialogs/{id}/audio` | Stream the call recording (CORS-free proxy) |
-| GET/POST | `/checklists` | List / create |
-| GET | `/checklists/default` | The checklist used when none is specified |
-| GET/PUT/DELETE | `/checklists/{id}` | Read / replace (bumps `version`) / delete |
-| POST | `/checklists/{id}/duplicate`, `/{id}/default` | Copy; make default |
-| POST | `/evaluations` | Queue one evaluation → `202` |
-| POST | `/evaluations/sync` | Evaluate one dialog and wait (demo-friendly) |
-| POST | `/evaluations/batch` | Queue many / all dialogs → `batch_id` |
-| GET | `/evaluations/batch/{batch_id}` | Progress counters |
-| GET | `/evaluations`, `/evaluations/{id}` | List (filters) / full result card |
+| POST | `/datasets/import` `{group_id}` | Fetch a dataset from the organizer API (needs `ORGANIZER_API_URL`) |
+| POST | `/datasets/upload` `{name, payload}` | Dataset from a JSON document (organizer envelope or bare record list) |
+| POST | `/datasets/upload-file` (multipart) | Same, as a file upload — handy for curl |
+| GET | `/dialogs` | Rows for the list (`?channel=`, `?language=`, `?group_id=`): latest score, checklist version, appeal counters |
+| GET | `/dialogs/{id}` | Organizer record (transcript as received) |
+| DELETE | `/dialogs/{id}` | Remove a dialog with its evaluations and appeals |
+| GET | `/dialogs/{id}/evaluation` | Latest **completed** evaluation or `404` |
+| GET | `/dialogs/{id}/evaluations` | Evaluation history (incl. in-progress / failed) |
+| GET | `/dialogs/{id}/audio` | `{url, player_url, stream_url, expires_at}` — mp3 link extracted from the player page |
+| GET | `/dialogs/{id}/audio/stream` | Recording bytes proxied through the backend (fallback) |
+| GET | `/checklists/active` | Active checklist document |
+| GET | `/checklists/active/versions` · `/versions/{n}` | Version history; a specific version's document |
+| PUT | `/checklists/active` | Save the edited document as a new version |
+| POST | `/checklists/active/reset` | New version from the original PDF checklist |
+| POST | `/evaluations` `{conversation_id}` | Evaluate with the active checklist (waits up to `EVALUATION_WAIT_S`) |
+| POST | `/evaluations/batch` `{conversation_ids?, only_new?}` | Queue many / all dialogs → `batch_id` (`202`) |
+| GET | `/evaluations/batch/{batch_id}` | Progress counters (`finished: true` when done) |
+| GET | `/evaluations` | List (`?conversation_id=`, `?batch_id=`, `?status=`) |
+| GET | `/evaluations/{id}` | Full evaluation; poll while `status` is `queued` / `running` |
 | POST | `/evaluations/{id}/retry` | Re-queue a failed evaluation |
-| POST | `/evaluations/{id}/appeals` | Dispute a criterion |
-| GET | `/appeals?status=pending` | Reviewer queue |
-| GET | `/appeals/{id}` | Dispute + evidence + transcript fragment |
-| POST | `/appeals/{id}/decision` | `confirm` or `change` (+ `new_answer`, `reason`) |
+| GET/POST | `/appeals` | List (`?evaluation_id=`, `?status=open|confirmed|changed`) / dispute a criterion |
+| GET | `/appeals/{id}` | One appeal |
+| POST | `/appeals/{id}/decision` `{action, answer, reason}` | Reviewer decision; final total recalculated |
 
-### Result card shape (`GET /evaluations/{id}`)
+**Long evaluations.** A real model takes 10–15 s per chat and a single GPU serialises calls, so
+`POST /evaluations` queues the job and waits up to `EVALUATION_WAIT_S` (default 85 s, under
+Cloudflare's ~100 s limit). If the verdict is not ready by then, the response is the in-progress
+evaluation (`status: "queued"|"running"`, empty `results`) and the client should poll
+`GET /evaluations/{id}` until `status` is `completed`. Concurrent requests for the same dialog
+share one evaluation. Set `QUEUE_WORKERS=1` when the model runs on one local GPU.
+
+### Evaluation shape (`GET /evaluations/{id}`, `GET /dialogs/{id}/evaluation`)
 
 ```jsonc
 {
-  "id": 12, "dialog_id": "p1-ru-001", "status": "completed",
-  "checklist_snapshot": {"id": 1, "version": 1, "criteria": [...]},
-  "provider": "openai", "model_name": "gpt-4o-mini",
-  "usage": {"prompt_tokens": 4200, "completion_tokens": 650, "calls": 1, "cost_usd": 0.0011},
-  "original_total": 76.47, "final_total": 88.24,
-  "grave_error": false, "final_grave_error": false,
-  "original_sections": [{"name": "Начало и понимание запроса", "points": 29.41, "max_points": 29.41, "criteria": ["c1","c2"]}],
-  "final_sections": [...],
+  "evaluation_id": 12, "conversation_id": "p1-ru-001", "status": "completed",
+  "checklist_id": "chat-quality", "checklist_version": 1,
+  "checklist": { "id": "chat-quality", "version": 1, "sections": [...], "criteria": [...] },   // snapshot
+  "model": "qwen3.5:4b", "is_mock": false, "created_at": "...", "latency_ms": 12400,
+  "cost_usd": 0, "tokens": { "input": 4200, "output": 650 },
   "results": [
     {
-      "id": 90, "criterion_code": "c3", "criterion_title": "Идентификация",
-      "answer_type": "yes_no", "is_flag": false, "weight": 20,
-      "answer": "no", "score": 0, "effective_weight": 23.53,
+      "criterion_id": "c03", "answer": "no",                 // the model's verdict
       "explanation": "Данные счёта раскрыты без подтверждения личности.",
-      "evidence": [{"message_index": 11, "timestamp": "01:40", "speaker": "operator", "text": "..."}],
-      "checked_range": {"from_index": 9, "to_index": 13},
-      "na_reason": null, "normalization_note": null,
-      "final_answer": "yes", "final_score": 23.53, "final_effective_weight": 23.53,
-      "appeals": [{"id": 3, "status": "changed", "comment": "...", "previous_answer": "no",
-                   "new_answer": "yes", "decision_reason": "...", "decided_at": "..."}]
+      "na_reason": null,
+      "evidence": [{ "msg": 11, "quote": "..." }],           // 0-based transcript indexes
+      "checked_range": [9, 13],                              // where a missed action was expected
+      "final_answer": "yes",                                 // after reviewer decisions
+      "points": 0, "final_points": 23.53, "effective_weight": 23.53
     }
-  ]
+  ],
+  "total": 76.47, "final_total": 88.24,                      // backend-computed; the UI recomputes the same
+  "gross_error": false, "final_gross_error": false,
+  "sections": [{ "name": "...", "points": 29.41, "max_points": 29.41, "criteria": ["c01", "c02"] }]
 }
 ```
 
-`effective_weight` is the weight after N/A redistribution; `score` is the points earned against it.
-Per-criterion points are rounded to 2 decimals, the total is rounded once from the exact sum,
-so the two can differ by ±0.01.
+`effective_weight` is the weight after N/A redistribution; `points` are earned against it.
+Per-criterion points are rounded to 2 decimals and the total once from the exact sum, so they can
+differ by ±0.01.
 
 ## Configuration (`.env`)
 
@@ -153,7 +180,8 @@ so the two can differ by ±0.01.
 | `ML_PROVIDER` | `mock` | `mock` or `http` |
 | `ML_SERVICE_URL` | — | Base URL of the ML service (`/evaluate`, `/health`) |
 | `ML_TIMEOUT_S` / `ML_MAX_RETRIES` | `180` / `2` | Per-request timeout; retries on 5xx/network errors |
-| `QUEUE_WORKERS` | `3` | Parallel evaluations against the ML service |
+| `QUEUE_WORKERS` | `3` | Parallel evaluations against the ML service (`1` for one local GPU) |
+| `EVALUATION_WAIT_S` | `85` | How long `POST /api/evaluations` waits before returning the in-progress state |
 | `SEED_DEFAULT_CHECKLIST` | `true` | Create the PDF checklist on first start |
 
 ## CLI
@@ -169,7 +197,7 @@ python -m app.cli export-checklist [--out checklist.json]
 ## Development
 
 ```bash
-pytest                 # 52 tests: scoring rules, full API flow, appeals, ML client, failure modes
+pytest                 # 59 tests: scoring rules, API contract, batches/retries, appeals, ML client, failure modes
 ruff check . && ruff format .
 alembic revision --autogenerate -m "describe change"    # after editing app/models
 ```
@@ -188,14 +216,15 @@ backend/
 ├── app/
 │   ├── main.py            # app factory, lifespan (migrations, seed, queue)
 │   ├── cli.py             # operational commands
-│   ├── api/               # routers (dialogs, checklists, evaluations, appeals, system)
+│   ├── api/               # routers (datasets, dialogs, checklists, evaluations, appeals, system) + serializers
 │   ├── core/              # settings, db engine, logging, migrations runner
 │   ├── models/            # SQLAlchemy models
 │   ├── schemas/           # Pydantic request/response models
-│   ├── services/          # scoring, evaluation pipeline, queue, appeals, organizer client
+│   ├── services/          # scoring, evaluation pipeline, queue, appeals, checklist document, audio, organizer client
 │   └── ml/                # ML contract + clients (mock, http)
 ├── alembic/               # migrations
 ├── data/dev_dataset.json  # organizer DEV dataset (65 dialogs)
+├── data/checklist.default.json  # the PDF checklist in the UI document format (seeded as v1)
 ├── docs/ml-contract.md
 └── tests/
 ```

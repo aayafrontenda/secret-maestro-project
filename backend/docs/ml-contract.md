@@ -157,3 +157,22 @@ out-of-range evidence indexes are dropped.
 If the model ends up as a Python package, implement `app.ml.base.MLClient`
 (`evaluate(request) -> MLEvaluateResponse`, `health()`, `aclose()`) and register it in
 `app/ml/__init__.py::build_ml_client`. Nothing else changes.
+
+## Integration plan for the `maestro` package (ml/docs/ML_API.md)
+
+The ML team ships a Python package, not an HTTP service: `score_transcript(transcript, llm, ...)`
+is synchronous, blocking, ~10–15 s per chat on one GPU, and Ollama serialises calls. The backend
+side of the integration (to be added once `ml/` lands in `main`):
+
+- `app/ml/local.py` — `LocalMLClient` implementing `MLClient`: wraps `score_transcript` in
+  `asyncio.to_thread`, guarded by a semaphore of 1 (one GPU); `health()` → `llm.health()["ok"]`.
+- Mapping to this contract: `criteria[].criterion_id` ("01") ↔ our criterion `code`; `answer` as
+  is; `rationale` → `explanation`; `evidence[].message_id` ("M2" = 1-based position after empty
+  messages are dropped) → 0-based transcript index; `expected_at` → `checked_range`;
+  `status: "failed"` on a criterion → evaluation `failed` (no made-up score, as the ML doc says);
+  `model`, `llm_calls`, `duration_ms` → `model` / `usage`.
+- The checklist is passed from our request, so the prompt must be built from `criteria[].rule`
+  (`description` in the UI document), not from a hard-coded checklist.
+- `.env`: `ML_PROVIDER=local`, `QUEUE_WORKERS=1`, `EVALUATION_WAIT_S=85`. Batches of 65 take
+  ~15 min, so start the control-set batch right at hour 23.
+- Until then `ML_PROVIDER=mock` keeps the whole UI flow working.

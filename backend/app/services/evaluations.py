@@ -34,7 +34,7 @@ async def create_evaluation(
     ev = Evaluation(
         dialog_id=dialog.id,
         checklist_id=checklist.id,
-        checklist_snapshot=checklist_service.snapshot(checklist),
+        checklist_snapshot=await checklist_service.snapshot(session, checklist),
         status=EvaluationStatus.queued,
         batch_id=batch_id,
     )
@@ -54,17 +54,15 @@ async def create_batch(
     skipped = 0
     already: set[str] = set()
     if skip_evaluated:
-        stmt = (
-            select(Evaluation.dialog_id)
-            .where(
-                Evaluation.checklist_id == checklist.id,
-                Evaluation.status == EvaluationStatus.completed,
-                Evaluation.dialog_id.in_([d.id for d in dialogs]),
-            )
-            .distinct()
+        # Only a completed evaluation with the *current* checklist version counts.
+        stmt = select(Evaluation.dialog_id, Evaluation.checklist_snapshot).where(
+            Evaluation.checklist_id == checklist.id,
+            Evaluation.status == EvaluationStatus.completed,
+            Evaluation.dialog_id.in_([d.id for d in dialogs]),
         )
-        for (dialog_id,) in (await session.execute(stmt)).all():
-            already.add(dialog_id)
+        for dialog_id, snapshot in (await session.execute(stmt)).all():
+            if snapshot.get("version") == checklist.version:
+                already.add(dialog_id)
     created: list[Evaluation] = []
     for d in dialogs:
         if d.id in already:

@@ -1,9 +1,6 @@
-from datetime import datetime
 from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
-
-from app.schemas.common import ORMModel
 
 AnswerType = Literal["yes_no", "scale"]
 
@@ -69,35 +66,3 @@ class ChecklistIn(BaseModel):
         if not any(not c.is_flag for c in self.criteria):
             raise ValueError("a checklist needs at least one scored criterion")
         return self
-
-
-class CriterionOut(ORMModel):
-    id: int
-    code: str
-    position: int
-    title: str
-    rule: str
-    section: str | None
-    answer_type: AnswerType
-    scale_max: int | None
-    scale_steps: list[ScaleStep] | None
-    weight: float
-    allow_na: bool
-    na_rule: str | None
-    is_flag: bool
-
-
-class ChecklistSummary(ORMModel):
-    id: int
-    name: str
-    description: str | None
-    is_default: bool
-    version: int
-    created_at: datetime
-    updated_at: datetime
-    criteria_count: int = 0
-    total_weight: float = 0.0
-
-
-class ChecklistOut(ChecklistSummary):
-    criteria: list[CriterionOut]

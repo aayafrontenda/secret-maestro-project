@@ -39,6 +39,12 @@ GRAVE = re.compile(
 )
 
 
+def _canonical(code: str) -> str:
+    """c01 / C1 / 01 -> c1, so heuristics match the default checklist whatever the id style."""
+    m = re.fullmatch(r"[cC]?0*(\d+)", code.strip())
+    return f"c{m.group(1)}" if m else code.strip().lower()
+
+
 def _stable(seed: str, mod: int) -> int:
     digest = hashlib.sha256(seed.encode("utf-8")).digest()
     return int.from_bytes(digest[:4], "big") % mod
@@ -81,7 +87,7 @@ class MockMLClient:
         transcript: list[MLTranscriptMessage],
         operator_msgs: list[MLTranscriptMessage],
     ) -> MLCriterionResult:
-        key = c.code.lower()
+        key = _canonical(c.code)
         title = c.title.lower()
         last_index = transcript[-1].index if transcript else 0
 

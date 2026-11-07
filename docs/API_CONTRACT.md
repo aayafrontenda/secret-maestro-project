@@ -159,3 +159,64 @@
 ```
 → апелляция с `status: "confirmed" | "changed"` и `decision: { action, answer, reason, decided_at }`.
 Исходная оценка **не перезаписывается** — финальный результат = исходные ответы + решения по апелляциям.
+
+---
+
+## Статус реализации (бэкенд)
+
+Бэкенд в `backend/` реализует всё выше под `/api` (`API_BASE: 'http://<host>:8000/api'`),
+Swagger — `/docs`. Ниже — уточнения и то, что есть сверх контракта.
+
+### Долгая оценка и polling
+
+Модель оценивает чат 10–15 с, один GPU обрабатывает чаты по очереди, а Cloudflare режет запрос
+на ~100 с. Поэтому `POST /api/evaluations`:
+
+1. ставит оценку в очередь и ждёт результат до `EVALUATION_WAIT_S` (85 с по умолчанию);
+2. если модель успела — возвращает готовую оценку (`status: "completed"`), как в контракте;
+3. если нет — возвращает ту же оценку со `status: "queued" | "running"` и пустым `results[]`.
+   Клиент опрашивает `GET /api/evaluations/{evaluation_id}` (например, раз в 2 с), пока
+   `status` не станет `completed` (или `failed` — тогда в `error` текст причины).
+
+Повторный `POST /api/evaluations` для того же диалога, пока первая оценка в работе, не создаёт
+вторую — возвращает ту же.
+
+`GET /api/dialogs/:id/evaluation` отдаёт последнюю **завершённую** оценку (в работе и упавшие
+не считаются → `404`, пока нет завершённой).
+
+### Поля сверх контракта в оценке
+
+`status`, `error`, `batch_id`, `completed_at`, `final_total`, `gross_error`, `final_gross_error`,
+`sections[]`; в каждом `results[]` — `final_answer`, `points`, `final_points`, `effective_weight`,
+`normalization_note` (если бэку пришлось поправить ответ модели: N/A там, где не разрешён,
+ступень не из шкалы и т.п.). Фронт может их игнорировать — итог он считает сам, цифры совпадают.
+
+### Дополнительные эндпоинты
+
+| Метод | Путь | Зачем |
+|---|---|---|
+| GET | `/api/health`, `/api/queue` | Состояние бэка, доступность модели, очередь |
+| POST | `/api/datasets/upload-file` (multipart `file`) | Тот же upload, но файлом — для curl |
+| GET | `/api/dialogs/:id/evaluations` | История оценок диалога (включая в работе и упавшие) |
+| DELETE | `/api/dialogs/:id` | Удалить диалог с оценками и апелляциями |
+| GET | `/api/dialogs/:id/audio/stream` | Запись через бэк (если прямая SAS-ссылка не играет); в ответе `/audio` есть `stream_url` |
+| GET | `/api/checklists/active/versions/:n` | Документ конкретной версии |
+| POST | `/api/evaluations/batch` `{conversation_ids?, only_new?}` | Поставить в очередь много диалогов → `{batch_id, queued, skipped}` (`202`) |
+| GET | `/api/evaluations/batch/:batch_id` | Прогресс: `queued / running / completed / failed / finished` |
+| GET | `/api/evaluations` `?conversation_id= ?batch_id= ?status=` | Список оценок (кратко) |
+| GET | `/api/evaluations/:id` | Полная оценка — для polling |
+| POST | `/api/evaluations/:id/retry` | Повторить упавшую оценку |
+| GET | `/api/appeals/:id` | Одна апелляция |
+
+Для контрольного набора на 23-м часу: `POST /api/datasets/import {"group_id": "<выданный>"}` →
+`POST /api/evaluations/batch {"only_new": true}` → `GET /api/evaluations/batch/:id` до `finished`.
+Это быстрее, чем кнопка «Оценить новые» во фронте (она ходит по одному диалогу).
+
+### Отличия от «Чек-листа подключения»
+
+- Ошибки — `{ "error": "...", "detail": ... }`; `error` всегда есть.
+- `evaluation_id` и `appeal_id` — числа, а не строки `ev_123` / `ap_1`. Фронт сравнивает их
+  строго (`===`), бэк отдаёт одинаковый тип везде, так что это работает.
+- `GET /api/dialogs` без пагинации, как в контракте; есть фильтры `?channel=`, `?language=`, `?group_id=`.
+- Валидация чек-листа при `PUT` такая же, как во фронте (`validateChecklist`), плюс уникальность `id`
+  критериев; при ошибке `422` с перечислением.
