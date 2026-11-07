@@ -177,18 +177,19 @@ def test_backend_first_response_threshold_counts_as_a_standard_rule():
     assert extra_guidelines([line]) == []
 
 
-def test_standard_guidelines_go_only_to_the_generic_evaluator():
+def test_only_user_added_guidelines_reach_the_model():
     standard = "Теги и вложения в оценку не входят."
+    added = "Обращение на «ты» считается невежливым."
     new = {
         "code": "c9", "title": "Обращение по имени", "answer_type": "yes_no", "allow_na": False,
         "rule": "Да — оператор хотя бы раз обратился к клиенту по имени.",
     }
     llm = Recording({**ANSWERS, "generic": {"answer": "no", "evidence": [], "explanation": "..."}})
-    evaluate(request(CHECKLIST + [new]).model_copy(update={"guidelines": [standard]}), llm)
+    evaluate(request(CHECKLIST + [new]).model_copy(update={"guidelines": [standard, added]}), llm)
     generic = [p for p in llm.prompts if "\nRule: " in p]
-    narrow = [p for p in llm.prompts if "\nRule: " not in p]
-    assert len(generic) == 1 and standard in generic[0]
-    assert narrow and all(standard not in p for p in narrow)
+    assert len(generic) == 1 and added in generic[0]
+    # The PDF's standard notes lowered agreement on both paths, so no prompt gets them.
+    assert all(standard not in p for p in llm.prompts)
 
 
 def test_edited_settings_constrain_the_answer():

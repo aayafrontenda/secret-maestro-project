@@ -224,7 +224,9 @@ def evaluate(request: EvaluateRequest, llm: LLMClient, generic_llm: LLMClient | 
             results.append(_standard_result(ctx, criterion, preset_id, language))
         else:
             others = [c.title for c in request.criteria if c.code != criterion.code and c.title]
-            results.append(_generic_result(gctx, criterion, language, guidelines, others))
+            # Only rules the user added: the PDF's standard notes lowered generic agreement with
+            # Qwen (A 79% -> 71%, B 71% -> 53%), as they did for the narrow questions.
+            results.append(_generic_result(gctx, criterion, language, extra_guidelines(guidelines), others))
 
     traces = [t for attempts in ctx.traces.values() for t in attempts]
     return EvaluateResponse(
