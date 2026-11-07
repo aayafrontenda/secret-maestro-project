@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from .checklist import Answer
-from .probes import Context
+from .probes import Context, ProbeAnswer
 from .schemas import Role
 
 GREETING = re.compile(
@@ -60,6 +60,14 @@ CLARIFYING = re.compile(
 HELP_OFFER = re.compile(
     r"(чем ещ[её]|ещ[её] (какие[- ]то )?вопрос|ещ[её] (чем[- ]то )?помочь|басқа сұра\w*|тағы (қандай )?сұра\w*|"
     r"тағы көмек|anything else|other questions)",
+    re.IGNORECASE,
+)
+# The operator asking for verification data or how to address the client: routine, not asking again for known details.
+ROUTINE_QUESTION = re.compile(
+    r"(фамили|отчеств|ф\.?\s?и\.?\s?о\b|\bиин\b|\bин\b|\bжсн\b|номер телефона|\bсмс\b|\bsms\b|шестизначн|"
+    r"код подтвержд|идентификац|подтверд\w* личност|жеке бас\w* раста|адрес\w* (вашей )?(постоянной )?регистрац|"
+    r"адрес\w* проживани|как (я )?(могу |можно )?(к вам )?обращаться|как\w* (мы )?к вам обращаться|как вас зовут|"
+    r"атыңыз кім|full name|date of birth|phone number|verification code|how (should|can) i address you)",
     re.IGNORECASE,
 )
 GOODBYE = re.compile(
@@ -126,6 +134,9 @@ def c01(ctx: Context) -> Decision:
 
 def c02(ctx: Context) -> Decision:
     enough, known = ctx.ask("enough_info_from_start"), ctx.ask("used_known_details")
+    if not known.value and _is_routine(ctx, known.message_id):
+        # The "repeated" question was a verification or etiquette question, not a known detail asked again.
+        known = ProbeAnswer(True, known.message_id, "routine question, not a known detail asked again")
     # Asking again for what the client already gave fails the criterion even if nothing was missing.
     if not known.value:
         facts = {"enough_info_from_start": enough.value, "used_known_details": False}
@@ -215,6 +226,17 @@ def _next_operator(ctx: Context, message_id: str) -> str | None:
     return next((m.id for m in messages[start + 1 :] if m.role is Role.OPERATOR), None)
 
 
+def _is_routine(ctx: Context, message_id: str | None) -> bool:
+    message = ctx.message(message_id)
+    return message is not None and message.role is Role.OPERATOR and bool(ROUTINE_QUESTION.search(message.text))
+
+
+def _previous_operator(ctx: Context, message_id: str) -> str | None:
+    messages = ctx.transcript.messages
+    end = next((i for i, m in enumerate(messages) if m.id == message_id), 0)
+    return next((m.id for m in reversed(messages[:end]) if m.role is Role.OPERATOR), None)
+
+
 def c06(ctx: Context) -> Decision:
     # Scale from the checklist: 0 incoherent, 4 the client has to ask again, 7 one noticeable lapse, 10 clear.
     # Rudeness is scored in 05 and 08, not here.
@@ -222,10 +244,19 @@ def c06(ctx: Context) -> Decision:
     if incoherent.value and incoherent.message_id:
         return Decision(0, {"incoherent": True}, evidence=_cited(incoherent), expected_at=incoherent.message_id)
     asked_again = ctx.ask("client_asked_again")
+    if asked_again.value and asked_again.message_id:
+        # A broad question over the whole chat over-counts follow-ups; confirm on the message pair.
+        prev = _previous_operator(ctx, asked_again.message_id)
+        if prev is not None:
+            confirmed = ctx.ask("asked_again_confirmed", msg=asked_again.message_id, prev=prev)
+            if not confirmed.value:
+                asked_again = ProbeAnswer(False, None, "not confirmed on the message pair")
     if asked_again.value:
         facts = {"incoherent": False, "client_asked_again": True}
         return Decision(4, facts, evidence=_cited(asked_again), expected_at=asked_again.message_id)
     lapse = ctx.ask("noticeable_lapse")
+    if lapse.value and _is_routine(ctx, lapse.message_id):
+        lapse = ProbeAnswer(False, None, "routine question, not a lapse")
     facts = {"incoherent": False, "client_asked_again": False, "noticeable_lapse": lapse.value}
     if lapse.value:
         return Decision(7, facts, evidence=_cited(lapse), expected_at=lapse.message_id)

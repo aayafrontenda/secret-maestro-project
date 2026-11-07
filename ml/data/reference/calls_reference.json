@@ -1,0 +1,92 @@
+{
+ "about": "All 5 DEV voice calls: p4-ru-002/004/005 labelled by Gemini (Pro) and reviewed (p4-ru-004 changed), p4-ru-001 and p4-ru-003 copied from the dev and held-out sets. 'uncertain' needs a human.",
+ "labels": [
+  {
+   "conversation_id": "p4-ru-002",
+   "expected": {
+    "c1": "no",
+    "c2": "na",
+    "c3": "yes",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "no",
+    "c8": "no"
+   },
+   "notes": "C1: company and name, no greeting word (a continuing call). C2: N/A, the need was known. C7: goodbye without help offer or summary.",
+   "uncertain": [
+    "c1"
+   ]
+  },
+  {
+   "conversation_id": "p4-ru-004",
+   "expected": {
+    "c1": "yes",
+    "c2": "yes",
+    "c3": "yes",
+    "c4": 15,
+    "c5": "yes",
+    "c6": 4,
+    "c7": "na",
+    "c8": "no"
+   },
+   "notes": "C3: passed via SMS code after an address mismatch. C7: N/A, the client ended the call. Reviewed c6 10->4 and c4 20->15: the client asked three times whether he must write every time and the operator only repeated 'write or call'; the noise explains re-asking the e-mail, not this question.",
+   "uncertain": [
+    "c4",
+    "c6"
+   ]
+  },
+  {
+   "conversation_id": "p4-ru-005",
+   "expected": {
+    "c1": "no",
+    "c2": "yes",
+    "c3": "na",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "na",
+    "c8": "no"
+   },
+   "notes": "C1: no operator name in the transcript. C3: N/A, registration question. C7: N/A, the client dropped the call.",
+   "uncertain": [
+    "c1",
+    "c3"
+   ]
+  },
+  {
+   "conversation_id": "p4-ru-001",
+   "expected": {
+    "c1": "yes",
+    "c2": "na",
+    "c3": "na",
+    "c4": 15,
+    "c5": "yes",
+    "c6": 7,
+    "c7": "na",
+    "c8": "no"
+   },
+   "notes": "Call. The first operator line greets and gives a name despite recognition errors. The client ended the call.",
+   "uncertain": [],
+   "source": "dev_reference.json"
+  },
+  {
+   "conversation_id": "p4-ru-003",
+   "expected": {
+    "c1": "yes",
+    "c2": "yes",
+    "c3": "yes",
+    "c4": 20,
+    "c5": "yes",
+    "c6": 10,
+    "c7": "na",
+    "c8": "no"
+   },
+   "notes": "Client hung up the phone immediately after operator voiced the next step, leaving no time for goodbye, therefore c7 is N/A.",
+   "uncertain": [
+    "c7"
+   ],
+   "source": "heldout_reference.json"
+  }
+ ]
+}

@@ -170,7 +170,9 @@ def _c06(answers):
 def test_dialogue_level_is_set_by_code_from_facts():
     assert _c06({}) == 10
     assert _c06({"noticeable_lapse": ("M2", True)}) == 7
-    assert _c06({"client_asked_again": ("M3", True), "noticeable_lapse": ("M2", True)}) == 4
+    assert _c06({"client_asked_again": ("M3", True), "asked_again_confirmed": ("M3", True), "noticeable_lapse": ("M2", True)}) == 4
+    # Not confirmed on the message pair: a follow-up, not a re-ask; the lapse decides.
+    assert _c06({"client_asked_again": ("M3", True), "asked_again_confirmed": False, "noticeable_lapse": ("M2", True)}) == 7
     assert _c06({"incoherent": ("M2", True), "client_asked_again": ("M3", True)}) == 0
 
 
@@ -293,3 +295,29 @@ def test_latin_kazakh_client_is_checked_by_the_model():
     llm = FakeLLM({**GOOD, "client_language_used": ("M2", False)})
     decision = c01(Context(transcript=chat, facts=extract_facts(chat, "kk"), llm=llm))
     assert "client_language_used" in llm.calls and decision.answer == "no"
+
+
+
+def test_verification_questions_are_not_asking_again_for_known_details():
+    chat = _chat([
+        {"role": "client", "text": "Почему отклоняется мой приказ?"},
+        {"role": "operator", "text": "Здравствуйте, я Тимур. Какую бумагу вы покупали?"},
+        {"role": "client", "text": "Облигацию МФО."},
+        {"role": "operator", "text": "Продиктуйте, пожалуйста, ваши фамилию, имя, отчество."},
+        {"role": "client", "text": "Иванов Иван Иванович."},
+        {"role": "operator", "text": "Спасибо. Приказ отклонён биржей, можно купить только через трейдера."},
+    ])
+    answers = {**GOOD, "enough_info_from_start": False, "used_known_details": ("M4", False), "clarified_missing": ("M2", True)}
+    result = score_transcript(chat, FakeLLM(answers))
+    assert {c.criterion_id: c.answer for c in result.criteria}["02"] == "yes"
+
+
+def test_a_verification_question_is_not_a_lapse():
+    chat = _chat([
+        {"role": "client", "text": "Не вижу облигацию."},
+        {"role": "operator", "text": "Здравствуйте, я Тимур. Как я могу к вам обращаться?"},
+        {"role": "client", "text": "Айдар."},
+        {"role": "operator", "text": "Айдар, облигация в разделе «Котировки»."},
+    ])
+    result = score_transcript(chat, FakeLLM({**GOOD, "noticeable_lapse": ("M2", True)}))
+    assert {c.criterion_id: c.answer for c in result.criteria}["06"] == 10

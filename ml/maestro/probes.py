@@ -101,7 +101,9 @@ PROBES: dict[str, Probe] = {
             "used_known_details",
             "all",
             "Did the operator take into account the details the client had already given, without asking for them again? "
-            "If the client had not given any details, answer true.",
+            "If the client had not given any details, answer true. Asking for identification data to verify the client "
+            "(full name, ИИН, address, phone number, SMS code) is a verification step, NOT asking again for known "
+            "details; nor is asking again because the line was bad or the speech was not recognised.",
             cite="operator",
         ),
         Probe(
@@ -191,10 +193,21 @@ PROBES: dict[str, Probe] = {
             "not understand that reply or could not tell from it what to do? Example: the operator replies 'Вы вообще "
             "читать умеете? Бот всё написал.' and the client asks 'Не понимаю, на какой сайт перейти'. A new question "
             "on another topic ('Ещё вопрос: …', 'Тағы бір сұрақ'), a follow-up that builds on a reply the client "
-            "understood, or a detail the client adds does NOT count. It also does NOT count when the client understood the reply "
+            "understood ('А что значит…?', 'А почему тогда…?', 'А можно ещё…?'), or a detail the client adds does NOT "
+            "count. In a phone call, asking to repeat because of a bad line, noise or speech recognition ('Алло', "
+            "'Что говорите?', 'Повторите') does NOT count either. It also does NOT count when the client understood the reply "
             "but disagrees with it or objects to it, when the reply was simply wrong or off-topic, when the client "
             "gives new details or answers the operator's question, or repeats something only because the operator "
             "asked for it again.",
+            cite="client",
+        ),
+        Probe(
+            "asked_again_confirmed",
+            "since_operator",
+            "Look only at operator message {prev} and the client's message {msg} after it. Is message {msg} the client "
+            "asking AGAIN about the same thing, because they could not understand {prev} or could not tell from it what "
+            "to do? Answer false if {msg} is a follow-up that goes further, a new question, a reaction, new details, or "
+            "a request to repeat because of a bad line or noise.",
             cite="client",
         ),
         Probe(
@@ -203,7 +216,8 @@ PROBES: dict[str, Probe] = {
             "Was there one noticeable lapse in how the operator communicated that the client could still follow? "
             "Examples: asking again for something the client had already said, an explicit wait (leaving to check "
             "something, or a long pause listed in the facts) without warning the client, replies given in a confusing "
-            "order, many spelling mistakes. Rudeness, gross violations (such as offering a private service outside "
+            "order, many spelling mistakes. A wait the operator announced ('ожидайте на линии', 'минуту', 'сейчас проверю'), "
+            "asking how to address the client, or verification questions are NOT lapses. Rudeness, gross violations (such as offering a private service outside "
             "the company), the speed of the first reply and whether the answer was correct or complete do NOT count.",
             cite="operator",
             hints=True,
@@ -213,8 +227,10 @@ PROBES: dict[str, Probe] = {
             "chat_cut_off",
             "all",
             "Did the chat break off before the operator had a chance to close it, for example the client stopped "
-            "replying mid-dialogue and the chat was closed, or the connection dropped? If the operator answered and "
-            "simply did not say goodbye, answer false.",
+            "replying mid-dialogue and the chat was closed, or the connection dropped? In a phone call, the client "
+            "hanging up (a system message such as 'Клиент завершил разговор') before the operator's closing phrase "
+            "counts as breaking off, even right after the client said thank you. If the operator had time to close and "
+            "simply did not say goodbye, or the call ended after the operator's goodbye, answer false.",
         ),
         Probe(
             "summarized",
@@ -294,7 +310,7 @@ PROBE_CRITERION: dict[str, str] = {
     "identification_required": "03", "identity_confirmed_first": "03", "account_info_disclosed": "03",
     "request_formulated": "04", "consultation_level": "04",
     "impolite": "05", "client_complained": "05", "reacted_to_problem": "05",
-    "dialogue_level": "06", "incoherent": "06", "client_asked_again": "06", "noticeable_lapse": "06",
+    "dialogue_level": "06", "incoherent": "06", "client_asked_again": "06", "asked_again_confirmed": "06", "noticeable_lapse": "06",
     "chat_cut_off": "07", "summarized": "07", "offered_help": "07", "said_goodbye": "07",
     "insult": "08", "off_company_offer": "08", "confidential_disclosure": "08",
 }
