@@ -142,3 +142,24 @@ def test_service_endpoints():
         body = response.json()
         assert len(body["results"]) == 8 and body["conversation_id"] == "p1-ru-001"
         assert client.post("/evaluate", json={**request().model_dump(mode="json"), "criteria": []}).status_code == 422
+
+
+
+def test_small_edits_that_change_the_meaning_go_to_the_generic_evaluator():
+    edits = [
+        ("Да — проверка личности не подтверждена до раскрытия данных или защищённого действия.", "yes_no", False),
+        ("Да — оператор подвёл итог и предложил дальнейшую помощь и попрощался.", "yes_no", False),
+        ("Да — оператор вежлив, извинился и, если клиент выразил недовольство или описал неудобство, "
+         "отреагировал на конкретную проблему.", "yes_no", False),
+    ]
+    for rule, answer_type, is_flag in edits:
+        assert match_standard(rule, answer_type, is_flag, []) is None, rule
+
+
+def test_harmless_variants_keep_the_built_in_logic():
+    # As the frontend sends them: no "по шкале", an extra sentence about the negative answer.
+    assert match_standard("Оцените ясность, порядок ответов и предупреждение об ожидании.", "scale", False, [0, 4, 7, 10]) == "06"
+    assert match_standard(
+        "Да — выявлено оскорбление клиента, предложение платной услуги в обход компании или раскрытие "
+        "конфиденциальной информации. Нет — ни одно из трёх не выявлено.", "yes_no", True, []) == "08"
+    assert match_standard("да - оператор учел известные детали и уточнил недостающее до ответа", "yes_no", False, []) == "02"

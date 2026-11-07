@@ -34,6 +34,7 @@ def detect_language(text: str) -> str:
 @dataclass
 class ChatFacts:
     client_language: str = "unknown"
+    dialog_language: str | None = None  # from the request (ru, kk, en), if given
     first_operator_id: str | None = None
     first_operator_language: str = "unknown"
     last_operator_id: str | None = None
@@ -63,6 +64,7 @@ def extract_facts(transcript: Transcript, language_hint: str | None = None) -> C
         client_language = language_hint
     facts = ChatFacts(
         client_language=client_language,
+        dialog_language=language_hint,
         last_message_id=last.id,
         last_message_role=last.role.value,
         system_messages=[m.id for m in messages if m.role is Role.SYSTEM],

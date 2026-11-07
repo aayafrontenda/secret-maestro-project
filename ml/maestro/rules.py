@@ -32,6 +32,13 @@ IDENTITY_REQUESTED = re.compile(
     r"жеке басыңызды растау|verify your identity|confirm your identity)",
     re.IGNORECASE,
 )
+# The operator saying verification is needed, including conditional wording ("если нужно проверить счёт, понадобится
+# идентификация"): asking for it, rather than skipping it, is what the operator is judged on.
+VERIFICATION_ASKED = re.compile(
+    r"(подтверд\w* личност|идентификац|жеке бас\w* раста|verif\w* (your )?identity|confirm (your )?identity|"
+    r"identity (check|verification))",
+    re.IGNORECASE,
+)
 CONDITIONAL = re.compile(r"\b(если|егер|if)\b", re.IGNORECASE)
 QUESTION = re.compile(r"\w[^?]*\?")  # a client message with a question mark states a request
 # "Можно поговорить с человеком?" has a question mark but no request on substance.
@@ -43,6 +50,12 @@ OPERATOR_REQUEST = re.compile(
 CLARIFYING = re.compile(
     r"(\?|уточн\w*|укаж\w*|напиш\w*|подскаж\w*|сообщ\w*|назов\w*|пришл\w*|нақтыла\w*|айтыңыз|жазыңыз|"
     r"көрсетіңіз|\bspecify\b|\btell me\b|\blet me know\b|\bplease (send|share|confirm)\b)",
+    re.IGNORECASE,
+)
+# A closing offer of further help is a question but not a clarification. An opening "С чем помочь?" is one.
+HELP_OFFER = re.compile(
+    r"(чем ещ[её]|ещ[её] (какие[- ]то )?вопрос|ещ[её] (чем[- ]то )?помочь|басқа сұра\w*|тағы (қандай )?сұра\w*|"
+    r"тағы көмек|anything else|other questions)",
     re.IGNORECASE,
 )
 GOODBYE = re.compile(
@@ -93,7 +106,10 @@ def c01(ctx: Context) -> Decision:
     _settle_by_phrase(ctx, "introduced", [first], INTRODUCTION)
     greeted, introduced = ctx.ask("greeted"), ctx.ask("introduced")
     client_lang, operator_lang = ctx.facts.client_language, ctx.facts.first_operator_language
-    if client_lang != "unknown" and client_lang == operator_lang:
+    # Kazakh typed without its own letters is detected as Russian, so a dialog marked as Kazakh with a
+    # "Russian" operator reply is not settled by code.
+    dialog_says_other = ctx.facts.dialog_language not in (None, operator_lang)
+    if client_lang != "unknown" and client_lang == operator_lang and not dialog_says_other:
         same_language = True
     else:
         # Detection can be wrong (Kazakh written without its own letters), so a mismatch is confirmed by the model.
@@ -116,7 +132,10 @@ def c02(ctx: Context) -> Decision:
     if asked and "call" not in ctx.channel.lower():
         # A clarification needs an operator question or request for details somewhere in the chat; a guess
         # ("Переустановите приложение") is not one. Speech transcripts may lack question marks, so calls are trusted.
-        asked = any(m.role is Role.OPERATOR and CLARIFYING.search(m.text) for m in ctx.transcript.messages)
+        asked = any(
+            m.role is Role.OPERATOR and CLARIFYING.search(m.text) and not HELP_OFFER.search(m.text)
+            for m in ctx.transcript.messages
+        )
     facts = {"enough_info_from_start": False, "used_known_details": True, "clarified_missing": asked}
     answer = asked
     return Decision(
@@ -141,12 +160,19 @@ def c03(ctx: Context) -> Decision:
         return Decision("na", {"identification_required": False}, "na_03")
     confirmed = ctx.ask("identity_confirmed_first")
     facts = {"identification_required": True, "identity_confirmed_first": confirmed.value}
-    return Decision(
-        _yes_no(confirmed.value),
-        facts,
-        evidence=_cited(confirmed, required),
-        expected_at=None if confirmed.value else (required.message_id or _first_operator(ctx)),
-    )
+    if confirmed.value:
+        return Decision("yes", facts, evidence=_cited(confirmed, required))
+    # Not confirmed. The operator still did the job if they asked for verification and revealed nothing
+    # about the account (the client declined or left); "no" is for skipping or doing it wrong.
+    asked = next((m for m in ctx.transcript.messages if m.role is Role.OPERATOR and VERIFICATION_ASKED.search(m.text)), None)
+    if asked is not None:
+        disclosed = ctx.ask("account_info_disclosed")
+        facts.update(verification_asked=True, account_info_disclosed=disclosed.value)
+        if not disclosed.value:
+            return Decision("yes", facts, evidence=[asked.id])
+        return Decision("no", facts, evidence=_cited(disclosed, required), expected_at=disclosed.message_id)
+    facts["verification_asked"] = False
+    return Decision("no", facts, evidence=_cited(required), expected_at=required.message_id or _first_operator(ctx))
 
 
 def c04(ctx: Context) -> Decision:

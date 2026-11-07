@@ -200,7 +200,60 @@ def test_a_clarification_must_be_an_operator_question():
         {"role": "client", "text": "Я на компьютере."},
     ]
     base = {**GOOD, "enough_info_from_start": False, "used_known_details": ("M2", True), "clarified_missing": ("M2", True)}
-    guess = score_transcript(_chat([*opening, {"role": "operator", "text": "Ну, тогда сайт."}]), FakeLLM(base))
-    asked = score_transcript(_chat([*opening, {"role": "operator", "text": "Укажите, пожалуйста, адрес сайта."}]), FakeLLM(base))
+    reply = {"role": "client", "text": "Freedom Global."}
+    guess = score_transcript(_chat([*opening, {"role": "operator", "text": "Ну, тогда сайт."}, reply]), FakeLLM(base))
+    asked = score_transcript(_chat([*opening, {"role": "operator", "text": "Укажите, пожалуйста, адрес сайта."}, reply]), FakeLLM(base))
+    offer = score_transcript(_chat([*opening, {"role": "operator", "text": "Ну, тогда сайт. Чем ещё могу помочь?"}, reply]), FakeLLM(base))
+    assert {c.criterion_id: c.answer for c in offer.criteria}["02"] == "no"  # a help offer is not a clarification
     assert {c.criterion_id: c.answer for c in guess.criteria}["02"] == "no"
     assert {c.criterion_id: c.answer for c in asked.criteria}["02"] == "yes"
+
+
+
+def test_declined_verification_is_not_the_operators_fault():
+    chat = _chat([
+        {"role": "client", "text": "Почему у меня поменялся тариф?"},
+        {"role": "operator", "text": "Здравствуйте, я Тимур. Чтобы проверить ваш счёт, нужно подтвердить личность."},
+        {"role": "client", "text": "Давайте пока без этого."},
+        {"role": "operator", "text": "Хорошо. Если решите, напишите нам. До свидания!"},
+    ])
+    answers = {**GOOD, "identification_required": ("M1", True), "identity_confirmed_first": False}
+    clean = score_transcript(chat, FakeLLM({**answers, "account_info_disclosed": False}))
+    leaked = score_transcript(chat, FakeLLM({**answers, "account_info_disclosed": ("M2", True)}))
+    assert {c.criterion_id: c.answer for c in clean.criteria}["03"] == "yes"
+    assert {c.criterion_id: c.answer for c in leaked.criteria}["03"] == "no"
+
+
+def test_skipped_verification_fails_identification():
+    chat = _chat([
+        {"role": "client", "text": "Почему отклоняются мои приказы?"},
+        {"role": "operator", "text": "Здравствуйте, я Саша. Биржа отменяет ваш приказ."},
+    ])
+    result = score_transcript(chat, FakeLLM({**GOOD, "identification_required": ("M1", True), "identity_confirmed_first": False}))
+    assert {c.criterion_id: c.answer for c in result.criteria}["03"] == "no"
+
+
+def test_dialog_marked_kazakh_is_not_settled_as_same_language_by_code():
+    from maestro.facts import extract_facts
+    from maestro.probes import Context
+    from maestro.rules import c01
+
+    chat = _chat([
+        {"role": "client", "text": "Салем, шотка акша тускен жок"},
+        {"role": "operator", "text": "Здравствуйте, меня зовут Алина. Проверю."},
+    ])
+    llm = FakeLLM({**GOOD, "client_language_used": ("M2", False)})
+    decision = c01(Context(transcript=chat, facts=extract_facts(chat, "kk"), llm=llm))
+    assert "client_language_used" in llm.calls and decision.answer == "no"
+
+
+
+def test_an_opening_question_counts_as_clarification_even_if_the_client_leaves():
+    chat = _chat([
+        {"role": "client", "text": "Подключите оператора."},
+        {"role": "operator", "text": "Здравствуйте! Меня зовут Валерия. С чем помочь?"},
+        {"role": "system", "text": "Клиент покинул чат."},
+    ])
+    answers = {**GOOD, "enough_info_from_start": False, "used_known_details": ("M2", True), "clarified_missing": ("M2", True)}
+    result = score_transcript(chat, FakeLLM(answers))
+    assert {c.criterion_id: c.answer for c in result.criteria}["02"] == "yes"

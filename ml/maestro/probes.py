@@ -131,6 +131,14 @@ PROBES: dict[str, Probe] = {
             "performed an account action? A system message reporting successful verification, or the operator checking "
             "details and confirming they match, counts. Only asking the client to verify, without confirmation, does NOT count.",
         ),
+        Probe(
+            "account_info_disclosed",
+            "people",
+            "Did the operator reveal anything about the client's OWN account (balance, restrictions, order, payment or "
+            "position status, holdings) or perform an action on it? Saying that verification is needed, explaining in "
+            "general terms, or guessing without looking at the account does NOT count.",
+            cite="operator",
+        ),
         # 04 Consultation
         Probe(
             "request_formulated",
@@ -283,7 +291,7 @@ LEVEL_PROBES: dict[str, LevelProbe] = {
 PROBE_CRITERION: dict[str, str] = {
     "greeted": "01", "introduced": "01", "client_language_used": "01",
     "enough_info_from_start": "02", "used_known_details": "02", "clarified_missing": "02",
-    "identification_required": "03", "identity_confirmed_first": "03",
+    "identification_required": "03", "identity_confirmed_first": "03", "account_info_disclosed": "03",
     "request_formulated": "04", "consultation_level": "04",
     "impolite": "05", "client_complained": "05", "reacted_to_problem": "05",
     "dialogue_level": "06", "incoherent": "06", "client_asked_again": "06", "noticeable_lapse": "06",
