@@ -27,6 +27,10 @@ class FakeLLM:
         raise AssertionError(f"unknown probe in prompt: {prompt[-200:]}")
 
     def complete(self, system: str, user: str, schema: dict[str, Any]) -> LLMResponse:
+        if "\nRule: " in user:  # the generic evaluator
+            self.calls.append("generic")
+            content = {"why": "scripted generic", **self.answers["generic"]}
+            return LLMResponse(content=json.dumps(content, ensure_ascii=False), duration_ms=1)
         key = self._probe_key(user)
         self.calls.append(key)
         answer = self.answers.get(key, False)

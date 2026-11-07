@@ -62,6 +62,18 @@ def _health(_: argparse.Namespace) -> int:
     return 0 if status["ok"] else 2
 
 
+def _serve(args: argparse.Namespace) -> int:
+    import logging
+
+    import uvicorn
+
+    from .service import create_app
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    uvicorn.run(create_app(), host=args.host, port=args.port)
+    return 0
+
+
 def _schema(_: argparse.Namespace) -> int:
     print(json.dumps(ScoreResult.model_json_schema(), ensure_ascii=False, indent=2))
     return 0
@@ -82,6 +94,11 @@ def main(argv: list[str] | None = None) -> int:
     score.add_argument("--think", action="store_true", help="enable the model's thinking mode")
     score.add_argument("-v", "--verbose", action="store_true", help="print every criterion")
     score.set_defaults(handler=_score)
+
+    serve = commands.add_parser("serve", help="start the HTTP service for the backend")
+    serve.add_argument("--host", default="127.0.0.1")
+    serve.add_argument("--port", type=int, default=8001)
+    serve.set_defaults(handler=_serve)
 
     commands.add_parser("health", help="check that Ollama and the model are available").set_defaults(handler=_health)
     commands.add_parser("schema", help="print the JSON schema of a result").set_defaults(handler=_schema)

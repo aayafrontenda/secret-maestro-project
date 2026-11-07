@@ -18,6 +18,21 @@ GREETING = re.compile(
     r"қайырлы (күн|таң|кеш)|hello|hi|good (morning|afternoon|evening))\b",
     re.IGNORECASE,
 )
+INTRODUCTION = re.compile(
+    r"(меня зовут|менің атым|my name is|\[имя скрыто\]|\[name hidden\])",
+    re.IGNORECASE,
+)
+IDENTITY_VERIFIED = re.compile(
+    r"(личность клиента подтверждена|идентификац\w* (успешно )?пройден|жеке басы расталды|identity verified|"
+    r"identity (has been |was )?confirmed)",
+    re.IGNORECASE,
+)
+IDENTITY_REQUESTED = re.compile(
+    r"(подтверд\w* личност|провед\w* идентификац|пройд\w* идентификац|начн\w* с идентификац|"
+    r"жеке басыңызды растау|verify your identity|confirm your identity)",
+    re.IGNORECASE,
+)
+CONDITIONAL = re.compile(r"\b(если|егер|if)\b", re.IGNORECASE)
 QUESTION = re.compile(r"\w[^?]*\?")  # a client message with a question mark states a request
 GOODBYE = re.compile(
     r"(до свидания|всего (доброго|хорошего)|хорошего (дня|вечера)|сау болыңыз|сау бол\b|қош болыңыз|"
@@ -63,6 +78,8 @@ def c01(ctx: Context) -> Decision:
     if first is None:
         return Decision("no", {"greeted": False, "introduced": False, "client_language_used": False})
     _settle_by_phrase(ctx, "greeted", [first], GREETING)
+    # Call transcripts hide names as "[Имя скрыто]"; the operator still said their name.
+    _settle_by_phrase(ctx, "introduced", [first], INTRODUCTION)
     greeted, introduced = ctx.ask("greeted"), ctx.ask("introduced")
     client_lang, operator_lang = ctx.facts.client_language, ctx.facts.first_operator_language
     if client_lang != "unknown" and client_lang == operator_lang:
@@ -88,6 +105,17 @@ def c02(ctx: Context) -> Decision:
 
 
 def c03(ctx: Context) -> Decision:
+    # A verification that happened, or that the operator asked for outright, shows identification was needed.
+    for message in ctx.transcript.messages:
+        verified = message.role is Role.SYSTEM and IDENTITY_VERIFIED.search(message.text)
+        requested = (
+            message.role is Role.OPERATOR
+            and IDENTITY_REQUESTED.search(message.text)
+            and not CONDITIONAL.search(message.text)
+        )
+        if verified or requested:
+            ctx.settle("identification_required", True, message.id, "verification requested or reported")
+            break
     required = ctx.ask("identification_required")
     if not required.value:
         return Decision("na", {"identification_required": False}, "na_03")

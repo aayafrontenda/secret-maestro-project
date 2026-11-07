@@ -1,0 +1,78 @@
+"""Recognise the eight standard checklist criteria inside a user-editable checklist.
+
+A criterion from the request uses the detailed built-in logic only while its rule still
+says what the standard criterion says. A reworded or new criterion is scored by the
+generic evaluator instead, so edits made in the checklist editor always take effect.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from difflib import SequenceMatcher
+
+from .checklist import BY_ID
+
+MIN_RULE_SIMILARITY = 0.75
+
+
+@dataclass(frozen=True)
+class Standard:
+    preset_id: str
+    rules: tuple[str, ...]  # standard wording in the languages the checklist may be written in
+    answer_type: str  # "yes_no" or "scale"
+    is_flag: bool = False
+
+
+# The rule texts come from the official checklist PDF, so they stay in its languages.
+STANDARDS: tuple[Standard, ...] = (
+    Standard("01", ("Да — оператор поздоровался на языке клиента и представился в первом ответе.",
+                    "Yes — the operator greeted the client in the client's language and introduced themselves in the first reply."), "yes_no"),
+    Standard("02", ("Да — оператор учёл известные детали и уточнил недостающее до ответа.",
+                    "Yes — the operator took known details into account and clarified what was missing before answering."), "yes_no"),
+    Standard("03", ("Да — проверка личности подтверждена до раскрытия данных или защищённого действия.",
+                    "Yes — identity verification was confirmed before disclosing data or a protected action."), "yes_no"),
+    Standard("04", ("Оцените ответ или следующий шаг по шкале.",
+                    "Rate the answer or the next step on the scale."), "scale"),
+    Standard("05", ("Да — оператор вежлив и, если клиент выразил недовольство или описал неудобство, отреагировал на конкретную проблему.",
+                    "Yes — the operator is polite and, if the client expressed dissatisfaction or described an inconvenience, reacted to the specific problem."), "yes_no"),
+    Standard("06", ("Оцените ясность, порядок ответов и предупреждение об ожидании по шкале.",
+                    "Rate clarity, the order of replies and the warning about waiting on the scale."), "scale"),
+    Standard("07", ("Да — оператор подвёл итог или предложил дальнейшую помощь и попрощался.",
+                    "Yes — the operator summarized or offered further help and said goodbye."), "yes_no"),
+    Standard("08", ("Да — выявлено оскорбление клиента, предложение платной услуги в обход компании или раскрытие конфиденциальной информации.",
+                    "Yes — an insult to the client, an offer of a paid service bypassing the company, or disclosure of confidential information was found."), "yes_no", is_flag=True),
+)
+
+NOISE = re.compile(r"[\W\d_]+", re.UNICODE)
+
+
+def _normalize(text: str) -> str:
+    text = text.casefold()
+    # Drop leading answer labels such as "Да —" / "Yes —" and anything that is not a letter.
+    text = re.sub(r"^\s*(да|yes|иә)\s*[—–-]\s*", "", text)
+    text = re.sub(r"\bпо шкале\b.*$", "по шкале", text)
+    return NOISE.sub(" ", text).strip()
+
+
+def similarity(a: str, b: str) -> float:
+    return SequenceMatcher(None, _normalize(a), _normalize(b), autojunk=False).ratio()
+
+
+def match_standard(
+    rule: str, answer_type: str, is_flag: bool, scale_values: list[int] | None
+) -> str | None:
+    """Return the preset ID ("01"…"08") that this criterion still is, or None."""
+    best: tuple[float, Standard | None] = (0.0, None)
+    for standard in STANDARDS:
+        if standard.answer_type != answer_type or standard.is_flag != is_flag:
+            continue
+        if standard.answer_type == "scale":
+            levels = set(BY_ID[standard.preset_id].levels)
+            if not scale_values or set(scale_values) != levels:
+                continue
+        score = max(similarity(rule, text) for text in standard.rules)
+        if score > best[0]:
+            best = (score, standard)
+    score, standard = best
+    return standard.preset_id if standard and score >= MIN_RULE_SIMILARITY else None

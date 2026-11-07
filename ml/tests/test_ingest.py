@@ -73,6 +73,14 @@ def test_language_detection(text, language):
     assert detect_language(text) == language
 
 
+def test_chat_offsets_are_minutes_and_seconds():
+    from maestro.ingest import parse_time
+
+    assert (parse_time("01:15") - parse_time("00:00")).total_seconds() == 75
+    assert (parse_time("125:00") - parse_time("00:00")).total_seconds() == 7500
+    assert parse_time("2026-11-01T10:00:00+05:00").hour == 10
+
+
 def test_facts_find_long_pauses():
     data = {
         "messages": [

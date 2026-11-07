@@ -3,7 +3,7 @@
 Labels live next to the chats: each chat object has an "expected" map such as
 {"01": "yes", "04": 15, ...}. Run from the ml/ directory:
 
-    uv run python eval/evaluate.py data/synthetic/chats.json --models qwen3.5:4b
+    uv run python eval/evaluate.py data/synthetic/chats.json --models qwen3.5:9b,qwen3.5:4b
 
 Synthetic chats only show that the pipeline works. Their labels were written by us, so
 the numbers are not an accuracy estimate for real chats.
@@ -109,7 +109,7 @@ def main() -> int:
     sys.stdout.reconfigure(encoding="utf-8")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("labels", type=Path)
-    parser.add_argument("--models", default="qwen3.5:4b", help="comma-separated Ollama models")
+    parser.add_argument("--models", default="qwen3.5:9b", help="comma-separated Ollama models")
     parser.add_argument("--think", choices=["off", "on", "both"], default="off")
     parser.add_argument("--out", type=Path, help="directory for per-chat results")
     args = parser.parse_args()

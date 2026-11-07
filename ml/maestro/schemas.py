@@ -21,6 +21,7 @@ class Message(BaseModel):
     role: Role
     text: str
     timestamp: datetime | None = None
+    time_text: str | None = Field(default=None, description="The original timestamp, shown to the model as is")
 
 
 class Transcript(BaseModel):

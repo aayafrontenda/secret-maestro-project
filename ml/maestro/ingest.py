@@ -11,7 +11,7 @@ import csv
 import io
 import json
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable
 
@@ -36,7 +36,10 @@ ROLE_SYNONYMS: dict[str, Role] = {
 }
 
 ATTACHMENT_PLACEHOLDER = "[attachment]"
-TIME_FORMATS = ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%H:%M:%S", "%H:%M")
+TIME_FORMATS = ("%d.%m.%Y %H:%M:%S", "%d.%m.%Y %H:%M", "%H:%M:%S")
+# Chats from the organizers use "MM:SS" offsets from the start of the chat.
+CHAT_OFFSET = re.compile(r"^(\d{1,3}):([0-5]\d)$")
+CHAT_START = datetime(2000, 1, 1)
 TXT_LINE = re.compile(
     r"^\s*(?:\[?(?P<time>\d[\d:.\-T /]*\d)\]?\s*[-–|]?\s*)?\[?(?P<role>[^\]:\d][^\]:]{0,29})\]?\s*:\s*(?P<text>.*)$"
 )
@@ -68,6 +71,9 @@ def parse_time(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value.replace(tzinfo=None)
     text = str(value).strip()
+    offset = CHAT_OFFSET.match(text)
+    if offset:
+        return CHAT_START + timedelta(minutes=int(offset[1]), seconds=int(offset[2]))
     try:
         return datetime.fromisoformat(text.replace("Z", "+00:00")).replace(tzinfo=None)
     except ValueError:
@@ -92,12 +98,14 @@ def _build(chat_id: str, records: list[dict[str, Any]]) -> Transcript:
             text = f"{text} {ATTACHMENT_PLACEHOLDER}".strip()
         if not text:
             continue
+        time_value = _first(record, TIME_FIELDS)
         messages.append(
             Message(
                 id=f"M{len(messages) + 1}",
                 role=parse_role(role_value),
                 text=text,
-                timestamp=parse_time(_first(record, TIME_FIELDS)),
+                timestamp=parse_time(time_value),
+                time_text=str(time_value).strip() if time_value is not None else None,
             )
         )
     if not messages:

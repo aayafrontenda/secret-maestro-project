@@ -21,12 +21,18 @@ from .facts import ChatFacts, render_facts
 from .llm import LLMClient, LLMOutputError, extract_json
 from .schemas import AttemptTrace, Message, Role, Transcript
 
-Scope = Literal["first_operator", "opening", "operator", "operator_tail", "client", "all"]
+Scope = Literal["first_operator", "opening", "operator", "operator_tail", "client", "people", "all"]
 Cite = Literal["any", "operator", "client"]
 
 SYSTEM_PROMPT = (Path(__file__).parent / "prompts" / "system.md").read_text(encoding="utf-8")
 MAX_ATTEMPTS = 3
 OPERATOR_TAIL = 3
+CALL_NOTE = (
+    "Note: this is a phone call transcribed by speech recognition. It contains recognition errors: garbled or "
+    "nonsense words, broken grammar, wrong word boundaries. Do not treat these errors as the operator's words, "
+    "rudeness or illiteracy; judge what the operator evidently meant. Placeholders such as '[Имя скрыто]' or "
+    "'[Персональные данные скрыты]' replace real names and personal data that were said aloud."
+)
 
 SCOPE_INTRO: dict[Scope, str] = {
     "first_operator": "The operator's FIRST message in the chat",
@@ -34,6 +40,9 @@ SCOPE_INTRO: dict[Scope, str] = {
     "operator": "All messages written by the OPERATOR",
     "operator_tail": "The operator's LAST messages in the chat",
     "client": "All messages written by the CLIENT",
+    # The bot's boilerplate ("I can share information about your accounts", privacy consent)
+    # misleads questions about account data, so those questions do not see bot messages.
+    "people": "The chat without the bot's messages: client, operator and system events",
     "all": "The whole chat",
 }
 
@@ -63,8 +72,9 @@ PROBES: dict[str, Probe] = {
             "introduced",
             "first_operator",
             "Does the operator give their own name or say who they are in this message, for example "
-            "'меня зовут Айгуль', 'менің атым Данияр' or 'support specialist Anna'? "
-            "A company name alone does NOT count.",
+            "'меня зовут Айгуль', 'менің атым Данияр', 'Мен Нұрланмын' or 'support specialist Anna'? "
+            "A company name alone does NOT count. A placeholder such as '[Имя скрыто]' is an anonymised name "
+            "and counts as the operator saying their name.",
         ),
         Probe(
             "client_language_used",
@@ -101,18 +111,19 @@ PROBES: dict[str, Probe] = {
         # 03 Identification
         Probe(
             "identification_required",
-            "all",
-            "Did the client ask the operator to look up or reveal data of their own account (balance, holdings, orders, "
-            "transactions, the status of their own payment or deposit, personal data) or to perform an operation on it "
-            "(withdrawal, changing account details, cancelling an order), OR did the operator reveal such data or "
-            "perform such an operation, for example 'I can see your payment of 50,000'? "
-            "Answer false for general questions (tariffs, how to open an account) and for instructions the client "
-            "follows on their own (how to reset a password in the app, how to submit a request), even if the client's "
-            "own account is mentioned.",
+            "people",
+            "Did helping the client require the operator to look into or act on the client's OWN account? Answer true "
+            "if the client asked for information only their account can show (why their withdrawal is restricted, "
+            "where their deposit is, their balance, holdings or order status) or for an operation on the account, "
+            "or if the OPERATOR revealed anything about the client's account, for example the operator writing 'I can "
+            "see a restriction on your account'. Answer false when the operator can help without looking at the "
+            "account: login problems, where to find or how to do something in the app or on the website, how to "
+            "update personal data, where to download a report or payment details, which account type to use, "
+            "tariffs, how a feature works. The client mentioning their account or a blocked action is not enough.",
         ),
         Probe(
             "identity_confirmed_first",
-            "all",
+            "people",
             "Is the client's identity confirmed in the chat BEFORE the operator disclosed account information or "
             "performed an account action? A system message reporting successful verification, or the operator checking "
             "details and confirming they match, counts. Only asking the client to verify, without confirmation, does NOT count.",
@@ -142,9 +153,11 @@ PROBES: dict[str, Probe] = {
         Probe(
             "reacted_to_problem",
             "all",
-            "The client complained in message {complaint}. Did the operator respond to that specific problem by "
-            "acknowledging it, apologising for it or addressing the inconvenience itself? "
-            "A generic phrase such as 'thank you for contacting us' does NOT count.",
+            "The client complained in message {complaint}. Did the operator respond to that specific problem? Any one "
+            "of these counts: acknowledging the client's concern ('I understand why you are worried', 'Понимаю, что "
+            "вы переживаете'), apologising, or giving an explanation or steps aimed at that specific problem. "
+            "Answer false only if the operator ignored the problem, brushed it off, or replied with nothing but a "
+            "generic phrase such as 'thank you for contacting us'.",
             cite="operator",
         ),
         # 07 Closing
@@ -175,9 +188,10 @@ PROBES: dict[str, Probe] = {
         Probe(
             "off_company_offer",
             "operator",
-            "Does the operator offer a service outside the company, for example ask the client to transfer money to "
-            "the operator personally for investing, or ask for the client's personal phone number to give paid advice "
-            "privately? The offer alone is enough.",
+            "Does the operator offer their OWN private service outside the company, for example ask the client to "
+            "transfer money to the operator personally for investing, or ask for the client's personal phone number "
+            "to give paid advice privately? The offer alone is enough. Pointing the client to the company's own "
+            "websites, apps, web terminal, departments or managers is NOT an offer outside the company.",
             cite="operator",
         ),
         Probe(
@@ -233,6 +247,7 @@ class Context:
     transcript: Transcript
     facts: ChatFacts
     llm: LLMClient
+    channel: str = "agent chat"
     traces: dict[str, list[AttemptTrace]] = field(default_factory=dict)
     _cache: dict[str, ProbeAnswer] = field(default_factory=dict)
 
@@ -254,6 +269,8 @@ class Context:
             return operator[-OPERATOR_TAIL:]
         if scope == "client":
             return [m for m in messages if m.role is Role.CLIENT]
+        if scope == "people":
+            return [m for m in messages if m.role is not Role.BOT]
         return list(messages)
 
     def settle(self, key: str, value: bool, message_id: str | None, why: str) -> None:
@@ -322,13 +339,21 @@ class Context:
             },
             "required": ["why", "answer", "message"],
         }
-        prompt = render_prompt(intro, shown, question, hints)
+        data = self.call(key, SYSTEM_PROMPT, render_prompt(intro, shown, question, hints), schema)
+        data.setdefault("message", "none")
+        return data
+
+    def call(self, key: str, system: str, prompt: str, schema: dict[str, Any]) -> dict[str, Any]:
+        """Ask the model, retrying unusable answers, and record every attempt under `key`."""
+        if "call" in self.channel.lower():
+            prompt = f"{CALL_NOTE}\n\n{prompt}"
         traces = self.traces.setdefault(key, [])
+        required = [name for name in schema.get("required", []) if name != "message"]
         last_error = ""
         for _ in range(MAX_ATTEMPTS):
-            digest = hashlib.sha256((SYSTEM_PROMPT + prompt).encode()).hexdigest()
+            digest = hashlib.sha256((system + prompt).encode()).hexdigest()
             try:
-                response = self.llm.complete(SYSTEM_PROMPT, prompt, schema)
+                response = self.llm.complete(system, prompt, schema)
             except LLMOutputError as exc:
                 last_error = str(exc)
                 traces.append(AttemptTrace(probe=key, prompt_sha256=digest, raw_response="", duration_ms=0, error=last_error))
@@ -344,9 +369,9 @@ class Context:
             traces.append(trace)
             try:
                 data = extract_json(response.content)
-                if "answer" not in data:
-                    raise LLMOutputError("the answer field is missing")
-                data.setdefault("message", "none")
+                missing = [name for name in required if name not in data]
+                if missing:
+                    raise LLMOutputError(f"missing fields: {', '.join(missing)}")
                 return data
             except LLMOutputError as exc:
                 last_error = trace.error = str(exc)
@@ -356,7 +381,12 @@ class Context:
 def render_messages(messages: list[Message]) -> str:
     lines = []
     for message in messages:
-        stamp = f" | {message.timestamp:%Y-%m-%d %H:%M:%S}" if message.timestamp else ""
+        if message.time_text:
+            stamp = f" | {message.time_text}"
+        elif message.timestamp:
+            stamp = f" | {message.timestamp:%Y-%m-%d %H:%M:%S}"
+        else:
+            stamp = ""
         lines.append(f"[{message.id}{stamp} | {message.role.value}] {message.text}")
     return "\n".join(lines)
 

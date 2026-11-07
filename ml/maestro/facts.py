@@ -53,12 +53,16 @@ def _client_language(transcript: Transcript) -> str:
     return votes.most_common(1)[0][0] if votes else "unknown"
 
 
-def extract_facts(transcript: Transcript) -> ChatFacts:
+def extract_facts(transcript: Transcript, language_hint: str | None = None) -> ChatFacts:
+    """`language_hint` (ru, kk or en) is used when the client's own messages do not reveal a language."""
     messages = transcript.messages
     operators = [m for m in messages if m.role is Role.OPERATOR]
     last = messages[-1]
+    client_language = _client_language(transcript)
+    if client_language == "unknown" and language_hint:
+        client_language = language_hint
     facts = ChatFacts(
-        client_language=_client_language(transcript),
+        client_language=client_language,
         last_message_id=last.id,
         last_message_role=last.role.value,
         system_messages=[m.id for m in messages if m.role is Role.SYSTEM],
