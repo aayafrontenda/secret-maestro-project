@@ -1,0 +1,45 @@
+/* Токены сняты с fbroker.kz (Tailwind-тема сайта): brand-primary, text-*, bg-*, градиент кнопок.
+   Всё под .cqa — чтобы не протекать в хост-страницу (Dynamics 365). */
+.cqa {
+  /* бренд */
+  --cqa-green: #00b323;          /* brand-primary */
+  --cqa-green-2: #13ad64;        /* brand-secondary */
+  --cqa-mint: #00e183;           /* brand-additional */
+  --cqa-green-ink: #0a7f2a;      /* зелёный для текста: #00b323 на белом не проходит 4.5:1 */
+  --cqa-grad: linear-gradient(91deg, #7d8dee -1.79%, #1ccc9e 25.51%, #1ae276 82.98%);
+  --cqa-grad-v: linear-gradient(180deg, #7d8dee, #1ccc9e 45%, #1ae276);
+
+  /* текст */
+  --cqa-ink: #323335;            /* text-primary */
+  --cqa-ink-2: #5f6d80;          /* text-tertiary #6a788a, чуть темнее для мелкого текста */
+  --cqa-ink-3: #b2bcc8;          /* text-secondary — только для декора и разделителей */
+
+  /* поверхности */
+  --cqa-bg: #ffffff;
+  --cqa-surface: #f3f8ff;        /* bg-primary — карточки новостей */
+  --cqa-surface-2: #e9f0f9;
+  --cqa-mint-bg: #dff5ec;        /* bg-secondary — hover у кнопок */
+  --cqa-line: #e7e7ea;           /* text-neutral — бордеры табов */
+  --cqa-line-2: #dde5ef;
+  --cqa-dark: #1d1d1b;
+
+  /* статусы */
+  --cqa-amber: #ffa700;          /* brand-accent */
+  --cqa-amber-bg: #fff8d5;       /* bg-warning */
+  --cqa-amber-ink: #8a5a00;
+  --cqa-red: #ee5555;
+  --cqa-red-ink: #b3261e;
+  --cqa-red-bg: #fdecec;
+  --cqa-violet: #7d8dee;
+
+  /* форма */
+  --cqa-r-sm: 8px;
+  --cqa-r-md: 12px;
+  --cqa-r-lg: 16px;
+  --cqa-r-btn: 20px;             /* rounded-20 у кнопок сайта */
+  --cqa-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);   /* default-shadow */
+  --cqa-shadow-lg: 0 18px 40px -12px rgba(16, 42, 67, 0.18);
+
+  --cqa-font: 'CoFo Sans', 'Onest', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --cqa-ease: cubic-bezier(0.16, 1, 0.3, 1);
+}

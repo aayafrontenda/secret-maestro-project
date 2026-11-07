@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fake Dynamics 365 — проверка встраивания</title>
+  <style>
+    /* Имитация чужих глобальных стилей CRM: если что-то из этого «пролезло» в CQA — изоляция сломана */
+    body { margin: 0; font-family: 'Times New Roman', serif; font-size: 11px; background: #eef0f3; }
+    button { background: red !important; }
+    .host-top { height: 48px; background: #002050; color: #fff; display: flex; align-items: center; padding: 0 16px; font: 600 14px system-ui; }
+    .host { display: flex; gap: 12px; padding: 12px; }
+    .host-side { width: 200px; background: #dde1e6; border-radius: 4px; padding: 12px; font: 13px system-ui; }
+    .host-main { flex: 1; min-width: 0; }
+    .host-main label { font: 12px system-ui; display: block; margin-bottom: 6px; }
+    iframe { width: 100%; height: calc(100vh - 110px); border: 1px solid #b8bec7; background: #fff; }
+  </style>
+</head>
+<body>
+  <div class="host-top">Fake Dynamics 365 · Обращение #CAS-00123</div>
+  <div class="host">
+    <div class="host-side">Сайдбар CRM<br><br>Меняйте ширину окна — рамка должна сжиматься без горизонтального скролла внутри.</div>
+    <div class="host-main">
+      <label>HTML web resource (iframe) → ./index.html</label>
+      <iframe src="./index.html#/dialogs/p1-ru-001" title="CQA"></iframe>
+    </div>
+  </div>
+</body>
+</html>

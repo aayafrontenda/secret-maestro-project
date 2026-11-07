@@ -1,0 +1,13 @@
+curl.exe "<скопированная ссылка GET для DEV>"
+
+
+{ "error": "", "isSuccess": true, "data": {
+"dataset_group_id": "DEV", "total_records": 65,
+"records": [{
+"conversation_id": "p1-ru-001",
+"channel": "agent chat", "language": "RU",
+"transcript": [{"timestamp": "00:02",
+"speaker": "operator", "text": "Здравствуйте!"}],
+"audio_url": null
+}]
+} }
