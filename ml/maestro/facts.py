@@ -75,6 +75,8 @@ def extract_facts(transcript: Transcript, language_hint: str | None = None) -> C
     for previous, current in zip(messages, messages[1:]):
         if current.role is not Role.OPERATOR or previous.timestamp is None or current.timestamp is None:
             continue
+        if current.id == facts.first_operator_id:
+            continue  # the wait for the operator to join is the first-response time, which is not scored
         gap = (current.timestamp - previous.timestamp).total_seconds()
         if gap >= LONG_PAUSE_SECONDS:
             facts.long_pauses.append(f"{previous.id} to {current.id}: {round(gap / 60)} min")

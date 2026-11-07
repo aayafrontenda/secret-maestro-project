@@ -86,8 +86,11 @@ def test_facts_find_long_pauses():
         "messages": [
             {"role": "client", "text": "Вопрос", "time": "2026-11-01T10:00:00"},
             {"role": "operator", "text": "Ответ", "time": "2026-11-01T10:20:00"},
+            {"role": "client", "text": "Ещё вопрос", "time": "2026-11-01T10:21:00"},
+            {"role": "operator", "text": "Ответ", "time": "2026-11-01T10:31:00"},
         ]
     }
     facts = extract_facts(parse_json_object(data)[0])
-    assert facts.long_pauses == ["M1 to M2: 20 min"]
+    # The wait before the first reply is first-response time, which the checklist does not score.
+    assert facts.long_pauses == ["M3 to M4: 10 min"]
     assert facts.first_operator_id == "M2"

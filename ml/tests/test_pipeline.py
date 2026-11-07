@@ -23,7 +23,6 @@ GOOD = {
     "consultation_level": ("M2", 20),
     "impolite": False,
     "client_complained": False,
-    "dialogue_level": ("M2", 10),
     "chat_cut_off": False,
     "summarized": False,
     "offered_help": ("M4", True),

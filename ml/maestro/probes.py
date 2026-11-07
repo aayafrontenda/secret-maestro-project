@@ -88,9 +88,10 @@ PROBES: dict[str, Probe] = {
             hints=True,
         ),
         # 02 Needs discovery
+        # 02 sees no bot messages: the bot's own clarifying questions were credited to the operator.
         Probe(
             "enough_info_from_start",
-            "all",
+            "people",
             "Did the client's messages BEFORE the operator's first answer already contain everything needed "
             "to answer, so that no clarifying question was necessary? A general question with one clear answer, "
             "such as a tariff or how to open an account, counts as yes. A greeting without a request, or a request "
@@ -99,14 +100,14 @@ PROBES: dict[str, Probe] = {
         ),
         Probe(
             "used_known_details",
-            "all",
+            "people",
             "Did the operator take into account the details the client had already given, without asking for them again? "
             "If the client had not given any details, answer true.",
             cite="operator",
         ),
         Probe(
             "clarified_missing",
-            "all",
+            "people",
             "Before giving the answer, did the operator ask the client for the details that were missing? "
             "If the client gave no request at first, asking how they can help counts.",
             cite="operator",
@@ -163,6 +164,33 @@ PROBES: dict[str, Probe] = {
             "generic phrase such as 'thank you for contacting us'.",
             cite="operator",
         ),
+        # 06 Dialogue management: one question per step of the scale, code picks the step
+        Probe(
+            "incoherent",
+            "people",
+            "Are the operator's replies so incoherent or contradictory that the course of the dialogue cannot be "
+            "followed? Answer true only for severe cases: replies that contradict each other or make no sense. "
+            "A wrong or unhelpful answer that is clearly worded is NOT incoherent.",
+            cite="operator",
+        ),
+        Probe(
+            "client_asked_again",
+            "people",
+            "Did the client have to ask again, repeat what they had said, or correct the operator because an "
+            "operator reply was unclear, wrong, irrelevant, out of order or ignored their question? Examples: "
+            "'Какое приложение? Я на компьютере', 'Я спрашиваю, почему вывод ограничен', 'Settings where?', "
+            "'Жоғарыда жаздым ғой'. A new, different question from the client does NOT count.",
+            cite="client",
+        ),
+        Probe(
+            "noticeable_lapse",
+            "people",
+            "Was there one noticeable lapse in how the operator communicated that still let the client understand "
+            "and continue? Examples: a long pause in the middle of the dialogue without warning the client (see the "
+            "pauses in the facts), a rude or careless phrase, sloppy wording, or replies in a confusing order. "
+            "The wait before the operator's first reply does NOT count.",
+            hints=True,
+        ),
         # 07 Closing
         Probe(
             "chat_cut_off",
@@ -176,7 +204,7 @@ PROBES: dict[str, Probe] = {
             "last_operator",
             "Does this closing message sum up the outcome or the next step of the conversation? Examples: "
             "'Your payment is being processed, we will reply in this chat', 'Я передал вопрос специалистам', "
-            "'We'll follow up here about the transfer'. 'You're welcome', 'Пожалуйста', thanks and good wishes "
+            "'Аударымға қатысты жауапты осында жібереміз', 'We'll follow up here about the transfer'. 'You're welcome', 'Пожалуйста', thanks and good wishes "
             "alone are NOT a summary.",
         ),
         Probe(
@@ -229,18 +257,6 @@ LEVEL_PROBES: dict[str, LevelProbe] = {
         "10: part of the request is closed, a material question remains open.\n"
         "5: there is a general hint, but the client still does not know how to act.\n"
         "0: there is no answer on substance, or the key recommendation is wrong.",
-    ),
-    "06": LevelProbe(
-        "dialogue_level",
-        (0, 4, 7, 10),
-        "How clearly and consistently did the operator communicate? Judge clarity, the order of replies, spelling and "
-        "grammar, and whether the operator warned the client before an explicit wait (leaving to check something, or a "
-        "long pause listed in the hints). Do not judge whether the answer was correct or complete, and do not judge "
-        "the speed of the first response. Pick one level:\n"
-        "10: replies are clear and coherent; if there was an explicit wait, the operator warned the client.\n"
-        "7: one noticeable lapse, such as an unannounced wait, but the client can understand the reply and continue.\n"
-        "4: the client has to ask again because of the wording or the order of replies.\n"
-        "0: incoherent or contradictory replies make the course of the dialogue impossible to follow.",
     ),
 }
 

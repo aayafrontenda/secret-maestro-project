@@ -58,6 +58,12 @@ uv run python eval/run_dev.py ../backend/data/dev_dataset.json --out runs/dev
 
 The 9B time is with `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0` set for Ollama.
 
+`data/examples/replaced_criteria_checklist.json` is the standard checklist with two criteria replaced (c5 by a new 0–10 scale, c7 by a new yes/no criterion with N/A). It exercises the generic evaluator the way the organizers' criterion swap will:
+
+```sh
+uv run python eval/run_dev.py ../backend/data/dev_dataset.json --criteria data/examples/replaced_criteria_checklist.json --only p1-ru-006,p1-kz-003,p1-en-014 --out runs/generic
+```
+
 `eval/evaluate.py` compares results with the `expected` labels stored with each chat and prints exact match per criterion, scale errors and the final score error by language. It accepts several models and `--think both` to compare thinking mode.
 
 The 12 chats in `data/synthetic/` were written by the team to exercise every N/A case and every gross violation type. Their labels are ours, so results on them show the pipeline works; they are not an accuracy estimate. Real chats go in `data/real/`, which is not committed.
@@ -66,6 +72,9 @@ The 12 chats in `data/synthetic/` were written by the team to exercise every N/A
 
 - Accuracy on real chats is unknown until labelled data arrives.
 - Criterion 04 cannot check facts about Freedom Broker tariffs or procedures: there is no reference material. It only catches answers that are missing, partial or self-contradictory.
-- Criterion 07 wording allows two readings. The rule used is "(summary or offer of further help) and goodbye". Check it against ground truth.
+- Criterion 07 wording allows two readings. The rule used is "(summary or offer of further help) and goodbye", with the summary looked for in the operator's last message. Check it against ground truth.
 - Criterion 08 counts disclosing this client's account data before identification as confidential disclosure. Check this too.
+- Criterion 06 is split into one question per step of its scale (incoherent → 0, the client had to ask again → 4, one noticeable lapse → 7, otherwise 10). The wait before the operator's first reply is not treated as a lapse, because first-response time is not scored.
+- Questions about criteria 02 and 03 do not see the bot's messages: the bot's own clarifying questions and its "I can share information about your accounts" greeting misled the model.
+- Answers can differ between runs on borderline cases even at temperature 0, because GPU inference is not fully deterministic.
 - Kazakh rationale strings in `maestro/texts.py` need a review by a native speaker.

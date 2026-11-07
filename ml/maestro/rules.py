@@ -176,8 +176,16 @@ def _next_operator(ctx: Context, message_id: str) -> str | None:
 
 
 def c06(ctx: Context) -> Decision:
-    level = ctx.level("06")
-    return Decision(int(level.value), evidence=_cited(level))
+    """Walk the scale from the bottom: each step has its own question, asked only if needed."""
+    incoherent = ctx.ask("incoherent")
+    if incoherent.value:
+        return Decision(0, {"incoherent": True}, evidence=_cited(incoherent))
+    asked_again = ctx.ask("client_asked_again")
+    if asked_again.value:
+        return Decision(4, {"incoherent": False, "client_asked_again": True}, evidence=_cited(asked_again))
+    lapse = ctx.ask("noticeable_lapse")
+    facts = {"incoherent": False, "client_asked_again": False, "noticeable_lapse": lapse.value}
+    return Decision(7 if lapse.value else 10, facts, evidence=_cited(lapse))
 
 
 def c07(ctx: Context) -> Decision:

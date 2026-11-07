@@ -27,7 +27,6 @@ ANSWERS = {
     "enough_info_from_start": ("M0", True),
     "request_formulated": ("M0", True),
     "consultation_level": ("M3", 20),
-    "dialogue_level": ("M3", 10),
     "offered_help": ("M5", True),
 }
 
@@ -139,6 +138,30 @@ def test_client_leaving_before_a_goodbye_is_a_cut_off():
     ])
     assert "chat_cut_off" not in llm.calls
     assert result.answer == "na"
+
+
+def _dialogue(answers):
+    llm = FakeLLM({**ANSWERS, **answers})
+    req = EvaluateRequest(conversation_id="x", transcript=TRANSCRIPT, criteria=[CHECKLIST[5]])
+    return evaluate(req, llm).results[0], llm
+
+
+def test_dialogue_scale_is_walked_from_the_bottom():
+    result, llm = _dialogue({"incoherent": ("M3", True)})
+    assert result.answer == 0 and llm.calls == ["incoherent"]
+    result, _ = _dialogue({"client_asked_again": ("M4", True)})
+    assert result.answer == 4 and result.evidence == [4]
+    result, _ = _dialogue({"noticeable_lapse": ("M5", True)})
+    assert result.answer == 7
+    result, llm = _dialogue({})
+    assert result.answer == 10 and llm.calls == ["incoherent", "client_asked_again", "noticeable_lapse"]
+
+
+def test_needs_discovery_questions_do_not_see_the_bot():
+    llm = Recording(ANSWERS)
+    req = EvaluateRequest(conversation_id="x", transcript=TRANSCRIPT, criteria=[CHECKLIST[1]])
+    evaluate(req, llm)
+    assert llm.prompts and all("AI-ассистент" not in p for p in llm.prompts)
 
 
 def test_reported_verification_means_identification_was_required():
