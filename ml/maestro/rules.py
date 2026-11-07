@@ -34,6 +34,11 @@ IDENTITY_REQUESTED = re.compile(
 )
 CONDITIONAL = re.compile(r"\b(если|егер|if)\b", re.IGNORECASE)
 QUESTION = re.compile(r"\w[^?]*\?")  # a client message with a question mark states a request
+# "Можно поговорить с человеком?" has a question mark but no request on substance.
+OPERATOR_REQUEST = re.compile(
+    r"(оператор|человек|специалист|сотрудник|маман|адам|\bagent\b|\bhuman\b|representative|\boperator\b)",
+    re.IGNORECASE,
+)
 GOODBYE = re.compile(
     r"(до свидания|всего (доброго|хорошего)|хорошего (дня|вечера)|сау болыңыз|сау бол\b|қош болыңыз|"
     r"\bgoodbye\b|\bbye\b|have a (nice|good|great) (day|evening))",
@@ -93,12 +98,16 @@ def c01(ctx: Context) -> Decision:
 
 
 def c02(ctx: Context) -> Decision:
-    enough = ctx.ask("enough_info_from_start")
+    enough, known = ctx.ask("enough_info_from_start"), ctx.ask("used_known_details")
+    # Asking again for what the client already gave fails the criterion even if nothing was missing.
+    if not known.value:
+        facts = {"enough_info_from_start": enough.value, "used_known_details": False}
+        return Decision("no", facts, evidence=_cited(known), expected_at=known.message_id or _first_operator(ctx))
     if enough.value:
-        return Decision("na", {"enough_info_from_start": True}, "na_02", _cited(enough))
-    known, clarified = ctx.ask("used_known_details"), ctx.ask("clarified_missing")
-    facts = {"enough_info_from_start": False, "used_known_details": known.value, "clarified_missing": clarified.value}
-    answer = known.value and clarified.value
+        return Decision("na", {"enough_info_from_start": True, "used_known_details": True}, "na_02", _cited(enough))
+    clarified = ctx.ask("clarified_missing")
+    facts = {"enough_info_from_start": False, "used_known_details": True, "clarified_missing": clarified.value}
+    answer = clarified.value
     return Decision(
         _yes_no(answer), facts, evidence=_cited(known, clarified), expected_at=None if answer else _first_operator(ctx)
     )
@@ -130,7 +139,7 @@ def c03(ctx: Context) -> Decision:
 
 
 def c04(ctx: Context) -> Decision:
-    client_ids = [m.id for m in ctx.shown("client")]
+    client_ids = [m.id for m in ctx.shown("client") if not OPERATOR_REQUEST.search(m.text)]
     _settle_by_phrase(ctx, "request_formulated", client_ids, QUESTION)
     formulated = ctx.ask("request_formulated")
     if not formulated.value:
@@ -165,8 +174,20 @@ def _next_operator(ctx: Context, message_id: str) -> str | None:
 
 
 def c06(ctx: Context) -> Decision:
-    level = ctx.level("06")
-    return Decision(int(level.value), evidence=_cited(level))
+    # Scale from the checklist: 0 incoherent, 4 the client has to ask again, 7 one noticeable lapse, 10 clear.
+    # Rudeness is scored in 05 and 08, not here.
+    incoherent = ctx.ask("incoherent")
+    if incoherent.value and incoherent.message_id:
+        return Decision(0, {"incoherent": True}, evidence=_cited(incoherent), expected_at=incoherent.message_id)
+    asked_again = ctx.ask("client_asked_again")
+    if asked_again.value:
+        facts = {"incoherent": False, "client_asked_again": True}
+        return Decision(4, facts, evidence=_cited(asked_again), expected_at=asked_again.message_id)
+    lapse = ctx.ask("noticeable_lapse")
+    facts = {"incoherent": False, "client_asked_again": False, "noticeable_lapse": lapse.value}
+    if lapse.value:
+        return Decision(7, facts, evidence=_cited(lapse), expected_at=lapse.message_id)
+    return Decision(10, facts, evidence=[ctx.facts.first_operator_id] if ctx.facts.first_operator_id else [])
 
 
 def c07(ctx: Context) -> Decision:

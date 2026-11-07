@@ -38,3 +38,21 @@ def test_client_errors_are_not_retried(monkeypatch):
     client = client_with([httpx.Response(404, text="model not found")], monkeypatch)
     with pytest.raises(LLMUnavailable, match="404"):
         client.complete("s", "u", {})
+
+
+def test_per_call_think_overrides_the_client_and_raises_the_token_limit():
+    import json as _json
+
+    sent = []
+
+    def handler(request):
+        sent.append(_json.loads(request.content))
+        return httpx.Response(200, json=OK)
+
+    client = OllamaClient(model="m", think=False, num_predict=384, think_predict=4096)
+    client.http = httpx.Client(transport=httpx.MockTransport(handler))
+    client.complete("s", "u", {})
+    client.complete("s", "u", {}, think=True)
+    client.complete("s", "u", {}, think=False)
+    assert [p["think"] for p in sent] == [False, True, False]
+    assert [p["options"]["num_predict"] for p in sent] == [384, 4096, 384]
