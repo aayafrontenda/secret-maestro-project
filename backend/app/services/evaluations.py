@@ -232,7 +232,9 @@ async def run_evaluation(session: AsyncSession, evaluation_id: int, ml: MLClient
         apply_scores(ev, report, final=False)
         apply_scores(ev, report, final=True)
         ev.provider = response.model.provider
-        ev.model_name = response.model.name
+        ev.model_name = " + ".join(
+            dict.fromkeys(n for n in (response.model.name, response.model.generic_name) if n)
+        )[:128]
         ev.usage = response.usage.model_dump() if response.usage else None
         ev.status = EvaluationStatus.completed
         ev.completed_at = _now()

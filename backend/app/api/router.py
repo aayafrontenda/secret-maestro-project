@@ -7,6 +7,7 @@ from app.api.routes import (
     dialogs,
     evaluations,
     insights,
+    results,
     system,
 )
 
@@ -19,3 +20,4 @@ api_router.include_router(checklists.router)
 api_router.include_router(evaluations.router)
 api_router.include_router(appeals.router)
 api_router.include_router(insights.router)
+api_router.include_router(results.router)

@@ -172,6 +172,9 @@ Everything lives under `/api`; the request/response shapes are in
 | POST | `/appeals/{id}/decision` `{action, answer, reason, by?}` | Reviewer decision; final total recalculated; deciding the last open appeal marks the evaluation reviewed |
 | POST / DELETE | `/evaluations/{id}/review` `{by?, note?}` | Mark the verdict as checked by a supervisor / return it to the worklist (`409` while appeals are open) |
 | GET / PUT | `/ml` `{provider}` | Configured evaluation providers (cloud / local / demo, reachability) and the active one; `PUT` switches new evaluations without a restart |
+| GET | `/results` `?group_id=&team=&mode=&model=&download=` | `results.json` in the organizers' format 1.0 (latest evaluation per dialog, final answers; not evaluated → `status: "error"`) |
+| GET | `/results/check` `?group_id=&expected=` | Validates that export: record count, the eight criteria, allowed values, `critical_flag`, no mock |
+| GET | `/results/groups` | Imported dataset groups with dialog counts |
 | GET | `/attention` | Review queue: grave violations, failed runs, open appeals, totals below `?threshold=` (default `ATTENTION_SCORE_THRESHOLD`), corrected model answers |
 | GET | `/insights/handoffs` | Bot → operator handoffs: topics, reasons, wait for the operator, per-dialog details, LLM job status |
 | POST | `/insights/handoffs/analyze` `{force?}` | Refine handoffs with the LLM in the background (`409` without a key) |
@@ -234,6 +237,7 @@ differ by ±0.01.
 | `PII_MASKING` | `true` | Mask personal data before it reaches a non-local LLM |
 | `OUTPUT_LANGUAGE` | `ru` | Language of model explanations |
 | `RUNTIME_STATE_FILE` | `data/runtime.json` | Where the provider chosen in the UI is kept; empty to disable |
+| `TEAM_NAME` | `Maestro` | `team_name` in `results.json` |
 | `ATTENTION_SCORE_THRESHOLD` | `60` | Totals below this land in the attention queue |
 | `QUEUE_WORKERS` | `3` | Parallel evaluations against the ML service (`1` for one local GPU) |
 | `EVALUATION_WAIT_S` | `85` | How long `POST /api/evaluations` waits before returning the in-progress state |
