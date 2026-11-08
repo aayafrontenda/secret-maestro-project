@@ -223,6 +223,7 @@ def evaluate(request: EvaluateRequest, llm: LLMClient, generic_llm: LLMClient | 
     )
 
     results = []
+    generic_names: list[str] = []  # who actually answered the generic criteria (a fallback may)
     for criterion in request.criteria:
         preset_id = match_standard(criterion.rule, criterion.answer_type, criterion.is_flag, _scale_values(criterion))
         if preset_id is not None:
@@ -232,12 +233,17 @@ def evaluate(request: EvaluateRequest, llm: LLMClient, generic_llm: LLMClient | 
             # Only rules the user added: the PDF's standard notes lowered generic agreement with
             # Qwen (A 79% -> 71%, B 71% -> 53%), as they did for the narrow questions.
             results.append(_generic_result(gctx, criterion, language, extra_guidelines(guidelines), others))
+            if generic_llm is not None and generic_llm.model not in generic_names:
+                generic_names.append(generic_llm.model)
+    # Name the second model only when it graded something, so a run of the eight standard
+    # criteria is reported as the main model alone.
+    generic_name = ", ".join(n for n in generic_names if n != llm.model) or None
 
     traces = [t for attempts in ctx.traces.values() for t in attempts]
     return EvaluateResponse(
         conversation_id=request.conversation_id,
         results=results,
-        model=ModelInfo(name=llm.model, generic_name=generic_llm.model if generic_llm is not None else None),
+        model=ModelInfo(name=llm.model, generic_name=generic_name),
         usage=Usage(
             prompt_tokens=sum(t.prompt_tokens or 0 for t in traces),
             completion_tokens=sum(t.completion_tokens or 0 for t in traces),

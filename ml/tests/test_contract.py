@@ -316,3 +316,10 @@ def test_generic_criteria_can_use_a_separate_model():
     assert "generic" not in main.calls and main.calls
     assert response.model.generic_name == "strong"
     assert response.usage.calls == len(main.calls) + len(strong.calls)
+
+
+def test_an_unused_generic_model_is_not_reported():
+    strong = FakeLLM({})
+    strong.model = "strong"
+    response = evaluate(request([Criterion(**c) for c in CHECKLIST]), FakeLLM(ANSWERS), strong)
+    assert not strong.calls and response.model.generic_name is None
