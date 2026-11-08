@@ -126,6 +126,11 @@ const httpApi = {
   getML: () => req('/ml'),
   setML: provider => req('/ml', { method: 'PUT', body: { provider } }),
 
+  // results.json for the organizers (format 1.0): groups, validation, download link.
+  resultGroups: () => req('/results/groups'),
+  checkResults: (group_id, expected) => req(`/results/check${qs({ group_id, expected })}`),
+  resultsUrl: group_id => `${CONFIG.API_BASE}/results${qs({ group_id, download: true })}`,
+
   // Attention queue and bot handoff insights.
   getAttention: (threshold, include_reviewed = false) => req(`/attention${qs({ threshold, include_reviewed: include_reviewed || null })}`),
   getHandoffs: () => req('/insights/handoffs'),

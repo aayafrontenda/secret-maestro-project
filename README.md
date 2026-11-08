@@ -127,6 +127,20 @@ docker compose up -d --build
 Без Docker: `cd ml && uv sync && uv run maestro serve`, затем бэкенд по [backend/README.md](backend/README.md)
 с `ML_PROVIDER=http` и `ML_SERVICE_URL=http://localhost:8001`.
 
+## Результаты для организаторов
+
+`results/dev/results.json` и `results/prod/results.json` — в формате 1.0 из приложения к гайду. Их отдаёт
+бэкенд по последней оценке каждого диалога набора (с учётом решений по апелляциям); неоценённый или упавший
+диалог попадает в файл со `status: "error"`, а не пропускается.
+
+```bash
+curl "http://localhost:8000/api/results/check?group_id=DEV&expected=65"   # ok, problems: []
+curl "http://localhost:8000/api/results?group_id=DEV&download=true" -o results/dev/results.json
+```
+
+То же в интерфейсе: «Аналитика» → «Сдача результатов». Без сервера: `cd backend && python -m app.cli
+export-results --group-id DEV --expect 65 --out ../results/dev/results.json`.
+
 ## Ограничения
 
 - Факты о тарифах и процедурах Freedom Broker модель не проверяет: базы знаний нет. Критерий 04 оценивает
