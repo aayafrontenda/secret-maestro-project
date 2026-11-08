@@ -14,6 +14,11 @@ const root = document.getElementById('cqa-root');
 root.classList.add('cqa', 'cqa-app');
 
 let role = store('cqa.role') || 'operator';
+// Rail: expanded shows the section names, collapsed shows icons with tooltips. The choice is remembered;
+// until the user picks, it opens on wide screens as before.
+let railOpen = store('cqa.rail');
+if (typeof railOpen !== 'boolean') railOpen = innerWidth >= 1600;
+root.classList.toggle('is-rail-open', railOpen);
 let view = null;
 let currentHash = null;
 
@@ -36,13 +41,26 @@ const navBox = h('nav', { class: 'cqa-nav', 'aria-label': 'Разделы' });
 
 function renderRoles() {
   fill(roleBox, ROLES.map(r => h('button', {
-    'aria-pressed': String(role === r.id), title: r.label,
+    class: 'cqa-has-tip', 'aria-pressed': String(role === r.id), 'aria-label': r.label,
     onclick: () => { role = r.id; store('cqa.role', role); renderRoles(); view?.setRole(role); },
   }, icon(r.icon, 16), h('span', null, r.label))));
 }
 function renderNav(key) {
-  fill(navBox, NAV.map(n => h('a', { href: n.href, 'aria-current': n.key === key ? 'page' : null, title: n.label }, icon(n.icon, 18), h('span', null, n.label))));
+  fill(navBox, NAV.map(n => h('a', { class: 'cqa-has-tip', href: n.href, 'aria-current': n.key === key ? 'page' : null, 'aria-label': n.label }, icon(n.icon, 18), h('span', null, n.label))));
 }
+const railToggle = h('button', { class: 'cqa-rail-toggle cqa-has-tip', type: 'button', onclick: () => setRail(!railOpen) });
+function renderRailToggle() {
+  railToggle.setAttribute('aria-expanded', String(railOpen));
+  railToggle.setAttribute('aria-label', railOpen ? 'Свернуть меню' : 'Развернуть меню');
+  fill(railToggle, icon(railOpen ? 'chevronLeft' : 'chevronRight', 16), h('span', null, 'Свернуть'));
+}
+function setRail(open) {
+  railOpen = open;
+  store('cqa.rail', open);
+  root.classList.toggle('is-rail-open', open);
+  renderRailToggle();
+}
+renderRailToggle();
 renderRoles();
 
 fill(root,
@@ -53,10 +71,10 @@ fill(root,
     navBox,
     h('div', { class: 'cqa-rail-foot' },
       h('button', {
-        class: 'cqa-lang-btn', title: 'Язык интерфейса', 'aria-label': 'Язык интерфейса',
+        class: 'cqa-lang-btn cqa-has-tip', 'aria-label': 'Язык интерфейса',
         onclick: () => { const i = LANGS.findIndex(l => l.id === lang()); setLang(LANGS[(i + 1) % LANGS.length].id); },
       }, icon('globe', 14), h('span', null, LANGS.find(l => l.id === lang()).label)),
-      h('span', { class: 'cqa-rail-label' }, 'Роль'), roleBox),
+      h('span', { class: 'cqa-rail-label' }, 'Роль'), roleBox, railToggle),
   ),
   main,
   h('div', { class: 'cqa-toasts', 'aria-live': 'polite' }),
