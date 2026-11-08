@@ -45,6 +45,26 @@ async def test_switch_persists_and_delegates(tmp_path: Path):
     }
 
 
+async def test_ml_service_is_shown_with_the_model_it_names(tmp_path: Path):
+    class Service(Named):
+        def __init__(self, model: str) -> None:
+            super().__init__("svc")
+            self.answering = model
+
+        async def status(self):
+            return True, self.answering
+
+    ml = SwitchableMLClient(
+        {"http": Service("qwen3.5:9b"), "x": Service("gemini-3.1-flash-lite")},
+        {"http": Provider("http", "cloud", None, "http://ml:8001"),
+         "x": Provider("x", "local", None, None)},
+        "http",
+        state_file=tmp_path / "rt.json",
+    )
+    shown = {p["id"]: (p["kind"], p["model"]) for p in (await ml.describe())["providers"]}
+    assert shown == {"http": ("local", "qwen3.5:9b"), "x": ("cloud", "gemini-3.1-flash-lite")}
+
+
 async def test_unknown_saved_choice_falls_back(tmp_path: Path):
     (tmp_path / "rt.json").write_text('{"ml_provider": "gone"}')
     assert _switch(tmp_path).active == "a"

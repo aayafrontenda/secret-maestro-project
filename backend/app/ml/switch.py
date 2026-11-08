@@ -7,7 +7,8 @@ The choice survives restarts in a small JSON file next to the database.
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+import re
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +16,8 @@ from app.ml.base import MLClient
 from app.ml.schemas import MLEvaluateRequest, MLEvaluateResponse
 
 log = logging.getLogger(__name__)
+
+CLOUD_MODEL = re.compile(r"^(gpt|o\d|chatgpt|gemini|claude|glm|deepseek|kimi|grok|mistral-large)", re.I)
 
 
 @dataclass
@@ -66,8 +69,18 @@ class SwitchableMLClient:
     async def describe(self) -> dict[str, Any]:
         items = []
         for pid, p in self._providers.items():
+            client = self._clients[pid]
             try:
-                reachable = await self._clients[pid].health()
+                status = getattr(client, "status", None)
+                if status is not None:
+                    # The ML service names its model; its URL (e.g. http://ml:8001 in Docker)
+                    # does not tell whether that model is local, the name does.
+                    reachable, model = await status()
+                    if model:
+                        kind = "cloud" if CLOUD_MODEL.match(model.rsplit("/", 1)[-1]) else "local"
+                        p = replace(p, model=model, kind=kind)
+                else:
+                    reachable = await client.health()
             except Exception:  # noqa: BLE001
                 reachable = False
             items.append({**asdict(p), "active": pid == self.active, "reachable": reachable})

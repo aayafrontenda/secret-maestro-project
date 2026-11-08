@@ -69,12 +69,20 @@ class HttpMLClient:
         except (ValueError, ValidationError) as exc:
             raise MLClientError(f"ML service returned an invalid response: {exc}") from exc
 
-    async def health(self) -> bool:
+    async def status(self) -> tuple[bool, str | None]:
+        """Reachable, and the model the service answers with now (its /health names it)."""
         try:
             resp = await self._client.get("/health", timeout=5.0)
-            return resp.status_code < 500
         except httpx.HTTPError:
-            return False
+            return False, None
+        try:
+            model = resp.json().get("model")
+        except (ValueError, AttributeError):
+            model = None
+        return resp.status_code < 500, model if isinstance(model, str) and model else None
+
+    async def health(self) -> bool:
+        return (await self.status())[0]
 
     async def aclose(self) -> None:
         await self._client.aclose()

@@ -716,3 +716,7 @@ a.cqa-tr.is-done .cqa-td--0 b { color: var(--cqa-ink-2); font-weight: 600; }
 .cqa-results-check { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--cqa-r-md); font-size: 12.5px; }
 .cqa-results-check.is-ok { background: var(--cqa-mint-bg); color: var(--cqa-green-ink); }
 .cqa-results-check.is-bad { background: var(--cqa-amber-bg); color: var(--cqa-amber-ink); }
+
+/* Evaluation model list: "сервис ML" under the kind; a long model name is cut, not overlapped */
+.cqa-ml-via { display: block; font-size: 11.5px; font-weight: 400; color: var(--cqa-ink-2); }
+.cqa-ml-model { max-width: 100%; }
