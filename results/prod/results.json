@@ -1,0 +1,762 @@
+{
+  "schema_version": "1.0",
+  "team_name": "Maestro",
+  "model": {
+    "mode": "local",
+    "name": "qwen3.5:9b"
+  },
+  "results": [
+    {
+      "conversation_id": "p2-en-001",
+      "status": "ok",
+      "criteria": [
+        {
+          "criterion_id": "contact",
+          "value": true,
+          "rationale": "Establishing contact — Yes. In the first reply the operator greeted the client, introduced themselves and replied in the client's language. Basis — operator message #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "discovery",
+          "value": true,
+          "rationale": "Needs discovery — Yes. The operator clarified the missing details before answering. Basis — operator message #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "identification",
+          "value": null,
+          "rationale": "Identification — N/A. The request did not require identification.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "consultation",
+          "value": 20,
+          "rationale": "Correct and complete consultation — 20 of 20. All material questions are closed or a correct next step is given. Basis — client message #1, operator message #14.",
+          "evidence_turns": [
+            1,
+            14
+          ]
+        },
+        {
+          "criterion_id": "empathy",
+          "value": true,
+          "rationale": "Empathy and customer focus — Yes. The operator was polite and addressed the specific problem the client complained about. Basis — client message #1, operator message #14.",
+          "evidence_turns": [
+            1,
+            14
+          ]
+        },
+        {
+          "criterion_id": "dialogue",
+          "value": 4,
+          "rationale": "Dialogue management — 4 of 10. The client has to ask again because of the wording or the order of replies. Basis — client message #13. Checked: #13–#16.",
+          "evidence_turns": [
+            13
+          ]
+        },
+        {
+          "criterion_id": "closure",
+          "value": false,
+          "rationale": "Closing — No. The operator said goodbye, but did not summarize the outcome and did not offer further help. Basis — operator message #16.",
+          "evidence_turns": [
+            16
+          ]
+        },
+        {
+          "criterion_id": "critical",
+          "value": false,
+          "rationale": "Gross errors — No. No insults, off-company offers or confidential disclosures were found. Checked: #10–#16.",
+          "evidence_turns": [
+            10,
+            16
+          ]
+        }
+      ],
+      "score": {
+        "final_score": 82.5,
+        "critical_flag": false
+      }
+    },
+    {
+      "conversation_id": "p2-en-002",
+      "status": "ok",
+      "criteria": [
+        {
+          "criterion_id": "contact",
+          "value": true,
+          "rationale": "Establishing contact — Yes. In the first reply the operator greeted the client, introduced themselves and replied in the client's language. Basis — operator message #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "discovery",
+          "value": null,
+          "rationale": "Needs discovery — N/A. The information needed to answer was available from the start. Basis — client message #1.",
+          "evidence_turns": [
+            1
+          ]
+        },
+        {
+          "criterion_id": "identification",
+          "value": null,
+          "rationale": "Identification — N/A. The request did not require identification.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "consultation",
+          "value": 20,
+          "rationale": "Correct and complete consultation — 20 of 20. All material questions are closed or a correct next step is given. Basis — client message #11, operator message #12.",
+          "evidence_turns": [
+            11,
+            12
+          ]
+        },
+        {
+          "criterion_id": "empathy",
+          "value": true,
+          "rationale": "Empathy and customer focus — Yes. The operator was polite and addressed the specific problem the client complained about. Basis — client message #5, operator message #10.",
+          "evidence_turns": [
+            5,
+            10
+          ]
+        },
+        {
+          "criterion_id": "dialogue",
+          "value": 10,
+          "rationale": "Dialogue management — 10 of 10. Replies are clear and coherent; the operator warned about any explicit wait. Basis — operator message #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "closure",
+          "value": false,
+          "rationale": "Closing — No. The operator said goodbye, but did not summarize the outcome and did not offer further help. Basis — operator message #21.",
+          "evidence_turns": [
+            21
+          ]
+        },
+        {
+          "criterion_id": "critical",
+          "value": false,
+          "rationale": "Gross errors — No. No insults, off-company offers or confidential disclosures were found. Checked: #10–#21.",
+          "evidence_turns": [
+            10,
+            21
+          ]
+        }
+      ],
+      "score": {
+        "final_score": 92.31,
+        "critical_flag": false
+      }
+    },
+    {
+      "conversation_id": "p2-kz-001",
+      "status": "ok",
+      "criteria": [
+        {
+          "criterion_id": "contact",
+          "value": true,
+          "rationale": "Байланыс орнату — Иә. Бірінші жауабында оператор амандасты, өзін таныстырды және клиенттің тілінде жауап берді. Негіз — оператор репликасы #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "discovery",
+          "value": true,
+          "rationale": "Қажеттілікті анықтау — Иә. Оператор жауап бермес бұрын жетіспейтін мәліметті нақтылады. Негіз — оператор репликасы #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "identification",
+          "value": null,
+          "rationale": "Сәйкестендіру — N/A. Сұрау сәйкестендіруді талап етпеді.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "consultation",
+          "value": 20,
+          "rationale": "Дұрыс әрі толық кеңес — 20 ішінен 20. Барлық маңызды сұрақтар жабылды немесе дұрыс келесі қадам берілді. Негіз — клиент репликасы #1, оператор репликасы #13.",
+          "evidence_turns": [
+            1,
+            13
+          ]
+        },
+        {
+          "criterion_id": "empathy",
+          "value": true,
+          "rationale": "Эмпатия және клиентке бағдарлану — Иә. Оператор сыпайы болды және клиент шағымданған нақты мәселеге назар аударды. Негіз — клиент репликасы #5, оператор репликасы #13.",
+          "evidence_turns": [
+            5,
+            13
+          ]
+        },
+        {
+          "criterion_id": "dialogue",
+          "value": 10,
+          "rationale": "Диалогты басқару — 10 ішінен 10. Жауаптар анық және байланысты; айқын күту болса, оператор ескертті. Негіз — оператор репликасы #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "closure",
+          "value": false,
+          "rationale": "Аяқтау — Жоқ. Оператор қоштасты, бірақ қорытынды жасамады және қосымша көмек ұсынбады. Негіз — оператор репликасы #15.",
+          "evidence_turns": [
+            15
+          ]
+        },
+        {
+          "criterion_id": "critical",
+          "value": false,
+          "rationale": "Өрескел қателер — Жоқ. Қорлау, компанияны айналып өтіп қызмет ұсыну және құпия ақпаратты жария ету анықталған жоқ. Тексерілген бөлік: #10–#15.",
+          "evidence_turns": [
+            10,
+            11,
+            12,
+            13,
+            14,
+            15
+          ]
+        }
+      ],
+      "score": {
+        "final_score": 93.75,
+        "critical_flag": false
+      }
+    },
+    {
+      "conversation_id": "p2-kz-002",
+      "status": "ok",
+      "criteria": [
+        {
+          "criterion_id": "contact",
+          "value": true,
+          "rationale": "Байланыс орнату — Иә. Бірінші жауабында оператор амандасты, өзін таныстырды және клиенттің тілінде жауап берді. Негіз — оператор репликасы #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "discovery",
+          "value": false,
+          "rationale": "Қажеттілікті анықтау — Жоқ. Жауап беру үшін деректер жеткіліксіз болды, бірақ оператор ештеңе нақтыламады. Негіз — оператор репликасы #10. Тексерілген бөлік: #10–#12.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "identification",
+          "value": null,
+          "rationale": "Сәйкестендіру — N/A. Сұрау сәйкестендіруді талап етпеді.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "consultation",
+          "value": 20,
+          "rationale": "Дұрыс әрі толық кеңес — 20 ішінен 20. Барлық маңызды сұрақтар жабылды немесе дұрыс келесі қадам берілді. Негіз — оператор репликасы #10, клиент репликасы #11.",
+          "evidence_turns": [
+            10,
+            11
+          ]
+        },
+        {
+          "criterion_id": "empathy",
+          "value": false,
+          "rationale": "Эмпатия және клиентке бағдарлану — Жоқ. Оператор сыпайы болмады. Негіз — клиент репликасы #1, оператор репликасы #10. Тексерілген бөлік: #10–#12.",
+          "evidence_turns": [
+            1,
+            10
+          ]
+        },
+        {
+          "criterion_id": "dialogue",
+          "value": 4,
+          "rationale": "Диалогты басқару — 10 ішінен 4. Тұжырымдар немесе жауаптардың реті салдарынан клиент қайта сұрауға мәжбүр. Негіз — клиент репликасы #11. Тексерілген бөлік: #11–#12.",
+          "evidence_turns": [
+            11
+          ]
+        },
+        {
+          "criterion_id": "closure",
+          "value": false,
+          "rationale": "Аяқтау — Жоқ. Оператор қорытынды жасады, бірақ қосымша көмек ұсынбады және қоштаспады. Негіз — оператор репликасы #10. Тексерілген бөлік: #10–#12.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "critical",
+          "value": true,
+          "rationale": "Өрескел қателер — Иә. Анықталды: компанияны айналып өтіп ақылы қызмет ұсыну, құпия ақпаратты жария ету. Негіз — оператор репликасы #10.",
+          "evidence_turns": [
+            10
+          ]
+        }
+      ],
+      "score": {
+        "final_score": 45.0,
+        "critical_flag": true
+      }
+    },
+    {
+      "conversation_id": "p2-kz-003",
+      "status": "ok",
+      "criteria": [
+        {
+          "criterion_id": "contact",
+          "value": true,
+          "rationale": "Байланыс орнату — Иә. Бірінші жауабында оператор амандасты, өзін таныстырды және клиенттің тілінде жауап берді. Негіз — оператор репликасы #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "discovery",
+          "value": null,
+          "rationale": "Қажеттілікті анықтау — N/A. Жауап беру үшін деректер басынан-ақ жеткілікті болды. Негіз — клиент репликасы #1.",
+          "evidence_turns": [
+            1
+          ]
+        },
+        {
+          "criterion_id": "identification",
+          "value": null,
+          "rationale": "Сәйкестендіру — N/A. Сұрау сәйкестендіруді талап етпеді.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "consultation",
+          "value": 20,
+          "rationale": "Дұрыс әрі толық кеңес — 20 ішінен 20. Барлық маңызды сұрақтар жабылды немесе дұрыс келесі қадам берілді. Негіз — клиент репликасы #1, оператор репликасы #10.",
+          "evidence_turns": [
+            1,
+            10
+          ]
+        },
+        {
+          "criterion_id": "empathy",
+          "value": false,
+          "rationale": "Эмпатия және клиентке бағдарлану — Жоқ. Оператор сыпайы болмады. Негіз — оператор репликалары #12, #14, клиент репликасы #13. Тексерілген бөлік: #10–#14.",
+          "evidence_turns": [
+            12,
+            13,
+            14
+          ]
+        },
+        {
+          "criterion_id": "dialogue",
+          "value": 10,
+          "rationale": "Диалогты басқару — 10 ішінен 10. Жауаптар анық және байланысты; айқын күту болса, оператор ескертті. Негіз — оператор репликасы #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "closure",
+          "value": true,
+          "rationale": "Аяқтау — Иә. Оператор қосымша көмек ұсынды және қоштасты. Негіз — оператор репликасы #14.",
+          "evidence_turns": [
+            14
+          ]
+        },
+        {
+          "criterion_id": "critical",
+          "value": true,
+          "rationale": "Өрескел қателер — Иә. Анықталды: компанияны айналып өтіп ақылы қызмет ұсыну. Негіз — оператор репликасы #12.",
+          "evidence_turns": [
+            12
+          ]
+        }
+      ],
+      "score": {
+        "final_score": 76.92,
+        "critical_flag": true
+      }
+    },
+    {
+      "conversation_id": "p2-kz-004",
+      "status": "ok",
+      "criteria": [
+        {
+          "criterion_id": "contact",
+          "value": true,
+          "rationale": "Байланыс орнату — Иә. Бірінші жауабында оператор амандасты, өзін таныстырды және клиенттің тілінде жауап берді. Негіз — оператор репликасы #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "discovery",
+          "value": false,
+          "rationale": "Қажеттілікті анықтау — Жоқ. Жауап беру үшін деректер жеткіліксіз болды, бірақ оператор ештеңе нақтыламады. Негіз — оператор репликасы #10. Тексерілген бөлік: #10–#11.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "identification",
+          "value": null,
+          "rationale": "Сәйкестендіру — N/A. Сұрау сәйкестендіруді талап етпеді.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "consultation",
+          "value": null,
+          "rationale": "Дұрыс әрі толық кеңес — N/A. Клиент сұрауын тұжырымдағанға дейін чат аяқталды.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "empathy",
+          "value": true,
+          "rationale": "Эмпатия және клиентке бағдарлану — Иә. Оператор сыпайы болды; клиент наразылық білдірмеді.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "dialogue",
+          "value": 10,
+          "rationale": "Диалогты басқару — 10 ішінен 10. Жауаптар анық және байланысты; айқын күту болса, оператор ескертті. Негіз — оператор репликасы #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "closure",
+          "value": null,
+          "rationale": "Аяқтау — N/A. Чат оны аяқтау мүмкіндігі болғанға дейін үзілді. Негіз — жүйелік хабарлама #11.",
+          "evidence_turns": [
+            11
+          ]
+        },
+        {
+          "criterion_id": "critical",
+          "value": false,
+          "rationale": "Өрескел қателер — Жоқ. Қорлау, компанияны айналып өтіп қызмет ұсыну және құпия ақпаратты жария ету анықталған жоқ. Тексерілген бөлік: #10–#11.",
+          "evidence_turns": [
+            10,
+            11
+          ]
+        }
+      ],
+      "score": {
+        "final_score": 72.73,
+        "critical_flag": false
+      }
+    },
+    {
+      "conversation_id": "p2-ru-001",
+      "status": "ok",
+      "criteria": [
+        {
+          "criterion_id": "contact",
+          "value": true,
+          "rationale": "Установление контакта — Да. В первом ответе оператор поздоровался, представился и ответил на языке клиента. Основание — реплика оператора #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "discovery",
+          "value": null,
+          "rationale": "Выявление потребности — N/A. Данных для ответа хватало с самого начала. Основание — реплика клиента #1.",
+          "evidence_turns": [
+            1
+          ]
+        },
+        {
+          "criterion_id": "identification",
+          "value": null,
+          "rationale": "Идентификация — N/A. Запрос не требовал идентификации.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "consultation",
+          "value": 20,
+          "rationale": "Корректная и полная консультация — 20 из 20. Все существенные вопросы закрыты или дан корректный следующий шаг. Основание — реплика клиента #1, реплика оператора #10.",
+          "evidence_turns": [
+            1,
+            10
+          ]
+        },
+        {
+          "criterion_id": "empathy",
+          "value": true,
+          "rationale": "Эмпатия и клиентоориентированность — Да. Оператор вежлив; клиент недовольства не выражал.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "dialogue",
+          "value": 10,
+          "rationale": "Управление диалогом — 10 из 10. Ответы ясные и связные; при явном ожидании оператор предупредил. Основание — реплика оператора #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "closure",
+          "value": true,
+          "rationale": "Завершение — Да. Оператор предложил дальнейшую помощь и попрощался. Основание — реплика оператора #12.",
+          "evidence_turns": [
+            12
+          ]
+        },
+        {
+          "criterion_id": "critical",
+          "value": false,
+          "rationale": "Грубые ошибки — Нет. Оскорблений, предложений услуг в обход компании и раскрытия конфиденциальной информации не выявлено. Проверен участок #10–#12.",
+          "evidence_turns": [
+            10,
+            11,
+            12
+          ]
+        }
+      ],
+      "score": {
+        "final_score": 100.0,
+        "critical_flag": false
+      }
+    },
+    {
+      "conversation_id": "p2-ru-002",
+      "status": "ok",
+      "criteria": [
+        {
+          "criterion_id": "contact",
+          "value": true,
+          "rationale": "Установление контакта — Да. В первом ответе оператор поздоровался, представился и ответил на языке клиента. Основание — реплика оператора #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "discovery",
+          "value": null,
+          "rationale": "Выявление потребности — N/A. Данных для ответа хватало с самого начала. Основание — реплика клиента #1.",
+          "evidence_turns": [
+            1
+          ]
+        },
+        {
+          "criterion_id": "identification",
+          "value": null,
+          "rationale": "Идентификация — N/A. Запрос не требовал идентификации.",
+          "evidence_turns": []
+        },
+        {
+          "criterion_id": "consultation",
+          "value": 20,
+          "rationale": "Корректная и полная консультация — 20 из 20. Все существенные вопросы закрыты или дан корректный следующий шаг. Основание — реплики клиента #1, #11.",
+          "evidence_turns": [
+            1,
+            11
+          ]
+        },
+        {
+          "criterion_id": "empathy",
+          "value": false,
+          "rationale": "Эмпатия и клиентоориентированность — Нет. Оператор вежлив, но не отреагировал на конкретную проблему, на которую пожаловался клиент. Основание — реплика клиента #13, реплика оператора #14.",
+          "evidence_turns": [
+            13,
+            14
+          ]
+        },
+        {
+          "criterion_id": "dialogue",
+          "value": 4,
+          "rationale": "Управление диалогом — 4 из 10. Клиенту приходится переспрашивать из-за формулировок или порядка ответов. Основание — реплика клиента #13. Проверен участок #13–#14.",
+          "evidence_turns": [
+            13
+          ]
+        },
+        {
+          "criterion_id": "closure",
+          "value": true,
+          "rationale": "Завершение — Да. Оператор предложил дальнейшую помощь и попрощался. Основание — реплика оператора #14.",
+          "evidence_turns": [
+            14
+          ]
+        },
+        {
+          "criterion_id": "critical",
+          "value": false,
+          "rationale": "Грубые ошибки — Нет. Оскорблений, предложений услуг в обход компании и раскрытия конфиденциальной информации не выявлено. Проверен участок #10–#14.",
+          "evidence_turns": [
+            10,
+            11,
+            12,
+            13,
+            14
+          ]
+        }
+      ],
+      "score": {
+        "final_score": 63.08,
+        "critical_flag": false
+      }
+    },
+    {
+      "conversation_id": "p2-ru-003",
+      "status": "ok",
+      "criteria": [
+        {
+          "criterion_id": "contact",
+          "value": true,
+          "rationale": "Установление контакта — Да. В первом ответе оператор поздоровался, представился и ответил на языке клиента. Основание — реплика оператора #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "discovery",
+          "value": true,
+          "rationale": "Выявление потребности — Да. Оператор уточнил недостающие детали до ответа. Основание — реплика оператора #13.",
+          "evidence_turns": [
+            13
+          ]
+        },
+        {
+          "criterion_id": "identification",
+          "value": true,
+          "rationale": "Идентификация — Да. Личность клиента подтверждена до раскрытия данных или защищённого действия. Основание — реплика оператора #10, системное сообщение #12.",
+          "evidence_turns": [
+            10,
+            12
+          ]
+        },
+        {
+          "criterion_id": "consultation",
+          "value": 20,
+          "rationale": "Корректная и полная консультация — 20 из 20. Все существенные вопросы закрыты или дан корректный следующий шаг. Основание — реплика клиента #16, реплика оператора #22.",
+          "evidence_turns": [
+            16,
+            22
+          ]
+        },
+        {
+          "criterion_id": "empathy",
+          "value": true,
+          "rationale": "Эмпатия и клиентоориентированность — Да. Оператор вежлив и отреагировал на конкретную проблему, на которую пожаловался клиент. Основание — реплика оператора #10, реплика клиента #17.",
+          "evidence_turns": [
+            10,
+            17
+          ]
+        },
+        {
+          "criterion_id": "dialogue",
+          "value": 10,
+          "rationale": "Управление диалогом — 10 из 10. Ответы ясные и связные; при явном ожидании оператор предупредил. Основание — реплика оператора #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "closure",
+          "value": false,
+          "rationale": "Завершение — Нет. Оператор попрощался, но не подвёл итог и не предложил дальнейшую помощь. Основание — реплика оператора #22.",
+          "evidence_turns": [
+            22
+          ]
+        },
+        {
+          "criterion_id": "critical",
+          "value": false,
+          "rationale": "Грубые ошибки — Нет. Оскорблений, предложений услуг в обход компании и раскрытия конфиденциальной информации не выявлено. Проверен участок #10–#22.",
+          "evidence_turns": [
+            10,
+            22
+          ]
+        }
+      ],
+      "score": {
+        "final_score": 95.0,
+        "critical_flag": false
+      }
+    },
+    {
+      "conversation_id": "p2-ru-004",
+      "status": "ok",
+      "criteria": [
+        {
+          "criterion_id": "contact",
+          "value": false,
+          "rationale": "Установление контакта — Нет. В первом ответе оператор ответил на языке клиента, но не поздоровался и не представился. Основание — реплика оператора #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "discovery",
+          "value": null,
+          "rationale": "Выявление потребности — N/A. Данных для ответа хватало с самого начала. Основание — реплика клиента #1.",
+          "evidence_turns": [
+            1
+          ]
+        },
+        {
+          "criterion_id": "identification",
+          "value": false,
+          "rationale": "Идентификация — Нет. Требовалась проверка личности, но оператор её не провёл. Основание — реплика оператора #12. Проверен участок #12–#15.",
+          "evidence_turns": [
+            12
+          ]
+        },
+        {
+          "criterion_id": "consultation",
+          "value": 20,
+          "rationale": "Корректная и полная консультация — 20 из 20. Все существенные вопросы закрыты или дан корректный следующий шаг. Основание — реплика клиента #11, реплика оператора #14.",
+          "evidence_turns": [
+            11,
+            14
+          ]
+        },
+        {
+          "criterion_id": "empathy",
+          "value": true,
+          "rationale": "Эмпатия и клиентоориентированность — Да. Оператор вежлив и отреагировал на конкретную проблему, на которую пожаловался клиент. Основание — реплика клиента #1, реплика оператора #12.",
+          "evidence_turns": [
+            1,
+            12
+          ]
+        },
+        {
+          "criterion_id": "dialogue",
+          "value": 10,
+          "rationale": "Управление диалогом — 10 из 10. Ответы ясные и связные; при явном ожидании оператор предупредил. Основание — реплика оператора #10.",
+          "evidence_turns": [
+            10
+          ]
+        },
+        {
+          "criterion_id": "closure",
+          "value": false,
+          "rationale": "Завершение — Нет. Оператор не подвёл итог, не предложил дальнейшую помощь и не попрощался. Основание — реплика оператора #14. Проверен участок #14–#15.",
+          "evidence_turns": [
+            14
+          ]
+        },
+        {
+          "criterion_id": "critical",
+          "value": true,
+          "rationale": "Грубые ошибки — Да. Выявлено: раскрытие конфиденциальной информации. Основание — реплика оператора #12.",
+          "evidence_turns": [
+            12
+          ]
+        }
+      ],
+      "score": {
+        "final_score": 58.82,
+        "critical_flag": true
+      }
+    }
+  ]
+}
