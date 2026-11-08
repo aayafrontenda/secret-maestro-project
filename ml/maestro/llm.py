@@ -85,6 +85,13 @@ def _rejected_param(response: httpx.Response) -> str | None:
     return next((name for name in OPTIONAL_PARAMS if f'"{name}"' in message or f"'{name}'" in message), None)
 
 
+def _out_of_quota(response: httpx.Response) -> bool:
+    """OpenAI reports an empty balance as 429 insufficient_quota, not 402: waiting does not refill it."""
+    return response.status_code == 429 and any(
+        mark in response.text for mark in ("insufficient_quota", "credit_balance_exhausted")
+    )
+
+
 class OpenAIClient:
     """OpenAI Chat Completions with JSON-schema output. Same interface as OllamaClient.
 
@@ -171,7 +178,7 @@ class OpenAIClient:
                         continue
                     raise LLMUnavailable(f"OpenAI rejected the request (400): {response.text[:300]}")
                 # No key, no credit (402), no access or no such model: retrying cannot help.
-                if response.status_code in (401, 402, 403, 404):
+                if response.status_code in (401, 402, 403, 404) or _out_of_quota(response):
                     raise LLMUnavailable(f"OpenAI rejected the request ({response.status_code}): {response.text[:300]}")
                 if response.status_code < 400:
                     data = response.json()
@@ -339,6 +346,17 @@ class FallbackClient:
     def model(self) -> str:
         return self.fallback.model if time.monotonic() < self._down_until else self.primary.model
 
+    def health(self) -> dict[str, Any]:
+        """The primary's status, or the fallback's while the primary is down (then `model` names the fallback)."""
+        primary = self.primary.health() if hasattr(self.primary, "health") else {"ok": True, "model": self.primary.model}
+        if primary["ok"] and time.monotonic() >= self._down_until:
+            return primary
+        backup = self.fallback.health() if hasattr(self.fallback, "health") else {"ok": True, "model": self.fallback.model}
+        if not backup["ok"]:
+            return primary
+        reason = primary.get("error") or "failed recently"
+        return {**backup, "fallback_for": self.primary.model, "error": None, "note": f"{self.primary.model}: {reason}"}
+
     def complete(self, system: str, user: str, schema: dict[str, Any], think: bool | None = None) -> LLMResponse:
         if time.monotonic() >= self._down_until:
             try:
@@ -351,9 +369,14 @@ class FallbackClient:
 
 
 def client_from_env() -> "LLMClient":
-    """The main client: MAESTRO_BACKEND=ollama (default) or openai (OpenAI or any OpenAI-compatible API)."""
+    """The main client: MAESTRO_BACKEND=ollama (default) or openai (OpenAI or any OpenAI-compatible API,
+    e.g. Gemini). A cloud model falls back to local Ollama when it is down or out of credit, unless
+    MAESTRO_FALLBACK=off (no Ollama on this machine)."""
     if os.getenv("MAESTRO_BACKEND", "ollama").lower() == "openai":
-        return OpenAIClient.from_env()
+        cloud = OpenAIClient.from_env()
+        if os.getenv("MAESTRO_FALLBACK", "ollama").strip().lower() in ("off", "none", "false", "0", "no"):
+            return cloud
+        return FallbackClient(cloud, OllamaClient.from_env())
     return OllamaClient.from_env()
 
 

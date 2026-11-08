@@ -76,3 +76,49 @@ async def test_api(client: AsyncClient):
     assert r.status_code == 404 and "openai" in r.json()["error"]
     r = await client.put("/api/ml", json={"provider": "mock"})
     assert r.status_code == 200 and r.json()["active"] == "mock"
+
+
+async def test_ml_service_shows_the_model_it_answers_with(tmp_path: Path):
+    """The ML service reports its model in /health: Gemini shows as cloud, its Qwen fallback as local."""
+    import httpx
+
+    from app.ml.http import HttpMLClient
+
+    reply = {"ok": True, "model": "gemini-3.1-flash-lite"}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200 if reply["ok"] else 503, json=reply)
+
+    service = HttpMLClient("http://127.0.0.1:8001")
+    service._client = httpx.AsyncClient(
+        base_url="http://127.0.0.1:8001", transport=httpx.MockTransport(handler)
+    )
+    ml = SwitchableMLClient(
+        {"http": service, "mock": Named("mock")},
+        {
+            "http": Provider("http", "local", None, "http://127.0.0.1:8001"),
+            "mock": Provider("mock", "demo", "heuristics", None),
+        },
+        "http",
+        state_file=tmp_path / "rt.json",
+    )
+
+    async def seen() -> dict:
+        return next(p for p in (await ml.describe())["providers"] if p["id"] == "http")
+
+    p = await seen()
+    assert (p["kind"], p["model"], p["reachable"]) == ("cloud", "gemini-3.1-flash-lite", True)
+    reply.update(model="qwen3.5:9b")  # Gemini out of credit: the service answers with Qwen
+    p = await seen()
+    assert (p["kind"], p["model"]) == ("local", "qwen3.5:9b")
+    reply.update(ok=False, model="qwen3.5:9b")
+    assert (await seen())["reachable"] is False
+    await service.aclose()
+
+
+def test_cloud_model_names():
+    from app.ml.base import is_cloud_model
+
+    assert is_cloud_model("gemini-3.1-flash-lite") and is_cloud_model("google/gemini-3.7-flash")
+    assert is_cloud_model("gpt-5.6-luna")
+    assert not is_cloud_model("qwen3.5:9b") and not is_cloud_model(None)

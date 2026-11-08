@@ -69,12 +69,24 @@ class HttpMLClient:
         except (ValueError, ValidationError) as exc:
             raise MLClientError(f"ML service returned an invalid response: {exc}") from exc
 
-    async def health(self) -> bool:
+    async def status(self) -> tuple[bool, str | None]:
+        """Reachable, and the model the service answers with now (its /health reports it).
+
+        The service may run Qwen locally or a cloud model, and falls back to Qwen when the cloud is
+        down, so the name is asked each time rather than configured here.
+        """
         try:
             resp = await self._client.get("/health", timeout=5.0)
-            return resp.status_code < 500
         except httpx.HTTPError:
-            return False
+            return False, None
+        try:
+            model = resp.json().get("model")
+        except (ValueError, AttributeError):
+            model = None
+        return resp.status_code < 500, model if isinstance(model, str) and model else None
+
+    async def health(self) -> bool:
+        return (await self.status())[0]
 
     async def aclose(self) -> None:
         await self._client.aclose()

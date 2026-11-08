@@ -160,8 +160,9 @@ export async function mountDialogs(root) {
           },
         },
           h('i', { class: `cqa-ml-dot ${p.reachable ? 'is-ok' : 'is-bad'}`, title: p.reachable ? 'доступна' : 'не отвечает' }),
-          h('span', { class: 'cqa-ml-name' }, ML_KIND[p.kind] || p.kind),
-          h('span', { class: 'cqa-ml-model' }, p.model || (p.id === 'http' ? 'сервис ML' : '')),
+          // the ML service (questions + rules) is marked, so two cloud entries are not confused
+          h('span', { class: 'cqa-ml-name' }, ML_KIND[p.kind] || p.kind, p.id === 'http' && h('small', { class: 'cqa-ml-via' }, 'сервис ML')),
+          h('span', { class: 'cqa-ml-model', title: p.model || null }, p.model || ''),
         ))),
         h('p', { class: 'cqa-muted' }, 'Переключает модель для новых оценок без перезапуска. Готовые оценки хранят свою модель — их можно сравнить.')),
 

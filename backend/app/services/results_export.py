@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.ml.base import CLOUD_MODEL
 from app.models import Dialog, Evaluation
 from app.models.evaluation import CriterionResult, EvaluationStatus
 
@@ -30,7 +31,7 @@ STANDARD: dict[str, tuple[str, set[Any]]] = {
 }
 ORDER = [cid for cid, _ in STANDARD.values()]
 
-CLOUD = re.compile(r"^(gpt|o\d|chatgpt|gemini|claude|glm|deepseek|kimi|grok|mistral-large)", re.I)
+CLOUD = CLOUD_MODEL
 
 
 def _allowed(value: Any, allowed: set[Any]) -> bool:

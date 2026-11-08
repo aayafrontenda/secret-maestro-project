@@ -54,16 +54,33 @@ One GPU scores one dialog at a time, about 24 s each, so one queue worker is eno
 The contract is in [`docs/ml-contract.md`](docs/ml-contract.md). With `ML_PROVIDER=mock`
 (default) a built-in heuristic answers instead, so the UI works before the model is ready.
 
-### Evaluate with a cloud LLM (OpenAI or any OpenAI-compatible API)
+### Evaluate with a cloud LLM (Gemini, OpenAI or any OpenAI-compatible API)
+
+Our cloud model is **gemini-3.1-flash-lite**: the most accurate and the most stable on our labels
+(92.1% / 88–89%, `ml/docs/ACCURACY_REVIEW.md`). Those numbers are for the ML service, which asks
+narrow questions and decides by rules, so run Gemini there: in `ml/.env`
+
+```
+MAESTRO_BACKEND=openai
+MAESTRO_OPENAI_URL=https://generativelanguage.googleapis.com/v1beta/openai
+MAESTRO_OPENAI_MODEL=gemini-3.1-flash-lite
+OPENAI_API_KEY=<Gemini API key from aistudio.google.com>
+```
+
+and keep `ML_PROVIDER=http` here. The «Модель оценки» list then shows it as
+«Облако · gemini-3.1-flash-lite · сервис ML»: the backend asks the service which model answers, and
+when Gemini is down or out of credit the service falls back to Qwen and the list says so.
+
+The backend can also grade with one request per dialog straight to an OpenAI-compatible API (this
+path was not measured with Gemini):
 
 ```
 ML_PROVIDER=openai
-OPENAI_API_KEY=sk-...
-OPENAI_MODEL=gpt-5.6-luna
-OPENAI_TEMPERATURE=
-OPENAI_PRICE_INPUT_PER_1M=0.20
-OPENAI_PRICE_OUTPUT_PER_1M=1.20
-# OpenRouter instead: OPENAI_BASE_URL=https://openrouter.ai/api/v1, OPENAI_MODEL=google/gemini-3.7-flash
+OPENAI_API_KEY=<Gemini API key>
+OPENAI_BASE_URL=https://generativelanguage.googleapis.com/v1beta/openai
+OPENAI_MODEL=gemini-3.1-flash-lite
+# set OPENAI_PRICE_INPUT_PER_1M / OPENAI_PRICE_OUTPUT_PER_1M from Google's price list for the cost line
+# OpenAI instead: OPENAI_BASE_URL=https://api.openai.com/v1, OPENAI_MODEL=gpt-4.1-mini
 ```
 
 **Several providers at once.** Every configured provider is available side by side: cloud

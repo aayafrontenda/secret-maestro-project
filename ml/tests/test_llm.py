@@ -130,3 +130,50 @@ def test_per_call_think_overrides_the_client_and_raises_the_token_limit():
     client.complete("s", "u", {}, think=False)
     assert [p["think"] for p in sent] == [False, True, False]
     assert [p["options"]["num_predict"] for p in sent] == [384, 4096, 384]
+
+
+def test_openai_out_of_quota_429_is_not_retried(monkeypatch):
+    from maestro.llm import OpenAIClient
+
+    calls = []
+
+    def handler(request):
+        calls.append(1)
+        return httpx.Response(429, json={"error": {"type": "insufficient_quota", "code": "credit_balance_exhausted"}})
+
+    monkeypatch.setattr(llm_module, "RETRY_DELAYS", (0.0, 0.0))
+    cloud = OpenAIClient(model="cloud", api_key="k")
+    cloud.http = httpx.Client(transport=httpx.MockTransport(handler))
+    with pytest.raises(LLMUnavailable, match="429"):
+        cloud.complete("s", "u", {})
+    assert len(calls) == 1
+
+
+def test_cloud_backend_falls_back_to_ollama_unless_turned_off(monkeypatch):
+    from maestro.llm import FallbackClient, OpenAIClient, client_from_env
+
+    monkeypatch.setenv("MAESTRO_BACKEND", "openai")
+    monkeypatch.setenv("MAESTRO_OPENAI_MODEL", "gemini-3.1-flash-lite")
+    monkeypatch.delenv("MAESTRO_FALLBACK", raising=False)
+    client = client_from_env()
+    assert isinstance(client, FallbackClient) and isinstance(client.fallback, OllamaClient)
+    assert client.model == "gemini-3.1-flash-lite"
+    monkeypatch.setenv("MAESTRO_FALLBACK", "off")
+    assert isinstance(client_from_env(), OpenAIClient)
+
+
+def test_fallback_health_names_the_model_that_answers(monkeypatch):
+    from maestro.llm import FallbackClient
+
+    class Model:
+        def __init__(self, name, ok):
+            self.model, self.ok = name, ok
+
+        def health(self):
+            return {"ok": self.ok, "model": self.model, **({} if self.ok else {"error": "402 billing"})}
+
+    assert FallbackClient(Model("gemini", True), Model("qwen", True)).health() == {"ok": True, "model": "gemini"}
+    down = FallbackClient(Model("gemini", False), Model("qwen", True)).health()
+    assert down["ok"] and down["model"] == "qwen" and down["fallback_for"] == "gemini"
+    both = FallbackClient(Model("gemini", False), Model("qwen", False)).health()
+    assert not both["ok"] and both["model"] == "gemini"

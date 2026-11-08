@@ -1,6 +1,16 @@
+import re
 from typing import Protocol
 
 from app.ml.schemas import MLEvaluateRequest, MLEvaluateResponse
+
+# Model names of cloud APIs (an OpenRouter-style "google/gemini-..." prefix is ignored).
+CLOUD_MODEL = re.compile(
+    r"^(gpt|o\d|chatgpt|gemini|claude|glm|deepseek|kimi|grok|mistral-large)", re.I
+)
+
+
+def is_cloud_model(name: str | None) -> bool:
+    return bool(name) and bool(CLOUD_MODEL.match(name.rsplit("/", 1)[-1]))
 
 
 class MLClientError(RuntimeError):

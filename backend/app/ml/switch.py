@@ -7,11 +7,11 @@ The choice survives restarts in a small JSON file next to the database.
 
 import json
 import logging
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from app.ml.base import MLClient
+from app.ml.base import MLClient, is_cloud_model
 from app.ml.schemas import MLEvaluateRequest, MLEvaluateResponse
 
 log = logging.getLogger(__name__)
@@ -66,8 +66,18 @@ class SwitchableMLClient:
     async def describe(self) -> dict[str, Any]:
         items = []
         for pid, p in self._providers.items():
+            client = self._clients[pid]
             try:
-                reachable = await self._clients[pid].health()
+                status = getattr(client, "status", None)
+                if status is not None:
+                    # The ML service names its current model: show it, cloud if it is one.
+                    reachable, model = await status()
+                    if model:
+                        p = replace(
+                            p, model=model, kind="cloud" if is_cloud_model(model) else p.kind
+                        )
+                else:
+                    reachable = await client.health()
             except Exception:  # noqa: BLE001
                 reachable = False
             items.append({**asdict(p), "active": pid == self.active, "reachable": reachable})
