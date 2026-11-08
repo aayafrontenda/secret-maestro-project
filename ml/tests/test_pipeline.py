@@ -51,7 +51,6 @@ def test_fixed_phrases_skip_the_model():
     assert "said_goodbye" not in llm.calls  # "Всего доброго"
     assert "client_language_used" not in llm.calls  # both detected as Russian
     assert "reacted_to_problem" not in llm.calls  # no complaint
-    assert "clarified_missing" not in llm.calls  # 02 is N/A
 
 
 def test_evidence_is_taken_from_the_transcript():
@@ -142,9 +141,31 @@ def test_asking_for_an_operator_is_not_a_request_on_substance():
 
 
 def test_re_asking_known_details_fails_needs_discovery_even_when_data_was_enough():
-    llm = FakeLLM({**GOOD, "used_known_details": ("M2", False)})
+    llm = FakeLLM({**GOOD, "used_known_details": ("M2", False), "known_detail_reasked": ("M2", True)})
     result = score_transcript(transcript(), llm)
     assert {c.criterion_id: c.answer for c in result.criteria}["02"] == "no"
+
+
+def test_needs_discovery_follows_what_the_operator_did():
+    chat = _chat([
+        {"role": "client", "text": "Не приходят SMS для входа."},
+        {"role": "operator", "text": "Здравствуйте, я Тимур. Подскажите, вы сменили номер телефона?"},
+        {"role": "client", "text": "Да, сменил."},
+        {"role": "operator", "text": "Тогда обновите номер в профиле. Всего доброго!"},
+    ])
+
+    def c02(answers):
+        result = score_transcript(chat, FakeLLM({**GOOD, **answers}))
+        return {c.criterion_id: c.answer for c in result.criteria}["02"]
+
+    # A clarifying question asked for a NEW detail is not a known detail asked again.
+    assert c02({"used_known_details": ("M2", False), "known_detail_reasked": False,
+                "clarified_missing": ("M2", True), "enough_info_from_start": True}) == "yes"
+    # The operator clarified before answering: "yes", even if the start looked complete.
+    assert c02({"clarified_missing": ("M2", True), "enough_info_from_start": True}) == "yes"
+    # No clarification: N/A when the start had everything, otherwise "no".
+    assert c02({"clarified_missing": False, "enough_info_from_start": True}) == "na"
+    assert c02({"clarified_missing": False, "enough_info_from_start": False}) == "no"
 
 
 def test_summary_is_looked_for_only_after_the_clients_last_message():

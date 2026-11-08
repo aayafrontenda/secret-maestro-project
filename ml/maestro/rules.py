@@ -144,16 +144,22 @@ def c01(ctx: Context) -> Decision:
 
 
 def c02(ctx: Context) -> Decision:
-    enough, known = ctx.ask("enough_info_from_start"), ctx.ask("used_known_details")
+    # Decided from what the operator visibly did, in this order: asked again for a known detail -> no;
+    # clarified the missing details before answering -> yes (so the start did not have everything);
+    # no clarification -> N/A if the start had everything, else no. Asking "was the start enough?" first
+    # sent chats where the operator plainly clarified (the device, the year, the new phone number) to N/A.
+    known = ctx.ask("used_known_details")
     if not known.value and _is_routine(ctx, known.message_id):
         # The "repeated" question was a verification or etiquette question, not a known detail asked again.
         known = ProbeAnswer(True, known.message_id, "routine question, not a known detail asked again")
+    if not known.value and known.message_id:
+        confirmed = ctx.ask("known_detail_reasked", msg=known.message_id)
+        if not confirmed.value:
+            known = ProbeAnswer(True, known.message_id, "asked for a new detail, not a known one")
     # Asking again for what the client already gave fails the criterion even if nothing was missing.
     if not known.value:
-        facts = {"enough_info_from_start": enough.value, "used_known_details": False}
-        return Decision("no", facts, evidence=_cited(known), expected_at=known.message_id or _first_operator(ctx))
-    if enough.value:
-        return Decision("na", {"enough_info_from_start": True, "used_known_details": True}, "na_02", _cited(enough))
+        return Decision("no", {"used_known_details": False}, evidence=_cited(known),
+                        expected_at=known.message_id or _first_operator(ctx))
     clarified = ctx.ask("clarified_missing")
     asked = clarified.value
     if asked and "call" not in ctx.channel.lower():
@@ -163,11 +169,14 @@ def c02(ctx: Context) -> Decision:
             m.role is Role.OPERATOR and CLARIFYING.search(m.text) and not HELP_OFFER.search(m.text)
             for m in ctx.transcript.messages
         )
-    facts = {"enough_info_from_start": False, "used_known_details": True, "clarified_missing": asked}
-    answer = asked
-    return Decision(
-        _yes_no(answer), facts, evidence=_cited(known, clarified), expected_at=None if answer else _first_operator(ctx)
-    )
+    if asked:
+        facts = {"used_known_details": True, "clarified_missing": True}
+        return Decision("yes", facts, evidence=_cited(known, clarified))
+    enough = ctx.ask("enough_info_from_start")
+    facts = {"used_known_details": True, "clarified_missing": False, "enough_info_from_start": enough.value}
+    if enough.value:
+        return Decision("na", facts, "na_02", _cited(enough))
+    return Decision("no", facts, evidence=_cited(known, clarified), expected_at=_first_operator(ctx))
 
 
 def c03(ctx: Context) -> Decision:

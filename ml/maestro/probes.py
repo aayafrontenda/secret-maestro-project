@@ -109,8 +109,21 @@ PROBES: dict[str, Probe] = {
         Probe(
             "clarified_missing",
             "all",
-            "Before giving the answer, did the operator ask the client for the details that were missing? "
-            "If the client gave no request at first, asking how they can help counts.",
+            "Before giving the answer, did the operator ask the client a clarifying question about the request, "
+            "for example which product, device, account, document, year or amount, or what exactly happened? "
+            "Asking for identification or verification does NOT count. If the client gave no request at first, "
+            "asking how they can help counts.",
+            cite="operator",
+        ),
+        Probe(
+            # Asked only when "used_known_details" fired: it took clarifying questions about NEW details
+            # (the device, the year, which IPO) for asking again what the client had said.
+            "known_detail_reasked",
+            "all",
+            "Look at operator message {msg} and the client's messages before it. Does {msg} ask the client for "
+            "something the client had ALREADY said in an earlier message, for example asking what the question is "
+            "when it is already in the chat? Answer false if it asks for something new: a device, a year, an "
+            "account type, which product, an amount, or identification data.",
             cite="operator",
         ),
         # 03 Identification
@@ -321,7 +334,7 @@ LEVEL_PROBES: dict[str, LevelProbe] = {
 
 PROBE_CRITERION: dict[str, str] = {
     "greeted": "01", "introduced": "01", "client_language_used": "01",
-    "enough_info_from_start": "02", "used_known_details": "02", "clarified_missing": "02",
+    "enough_info_from_start": "02", "used_known_details": "02", "clarified_missing": "02", "known_detail_reasked": "02",
     "identification_required": "03", "identity_confirmed_first": "03", "account_info_disclosed": "03",
     "request_formulated": "04", "consultation_level": "04",
     "impolite": "05", "client_complained": "05", "reacted_to_problem": "05",
