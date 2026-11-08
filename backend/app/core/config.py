@@ -55,6 +55,9 @@ class Settings(BaseSettings):
     # Language of model explanations: ru | kk | en.
     output_language: str = "ru"
 
+    # team_name in results/*/results.json (organizers' format).
+    team_name: str = "Maestro"
+
     # Attention queue: completed evaluations below this total are flagged.
     attention_score_threshold: float = Field(default=60.0, ge=0, le=100)
 

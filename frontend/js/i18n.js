@@ -19,6 +19,8 @@ const WORDS = [
   ['Роль', 'Role', 'Рөл'],
   ['Разделы', 'Sections', 'Бөлімдер'],
   ['Язык интерфейса', 'Interface language', 'Интерфейс тілі'],
+  ['Свернуть меню', 'Collapse menu', 'Мәзірді жию'],
+  ['Развернуть меню', 'Expand menu', 'Мәзірді ашу'],
   ['Диалоги', 'Dialogs', 'Диалогтар'],
   ['Внимание', 'Attention', 'Назар'],
   ['Чек-лист', 'Checklist', 'Чек-парақ'],
@@ -392,6 +394,12 @@ const WORDS = [
   ['Налоги', 'Taxes', 'Салықтар'],
   ['Общие вопросы о рынке', 'General market questions', 'Нарық туралы жалпы сұрақтар'],
   ['. Слабее всего:', '. Weakest:', '. Ең әлсізі:'],
+  ['Сдача результатов', 'Results submission', 'Нәтижелерді тапсыру'],
+  ['results.json в формате организаторов: один файл на набор, положить в results/dev/ или results/prod/ и запушить до стоп-кода.', 'results.json in the organizers’ format: one file per set, put it into results/dev/ or results/prod/ and push before the code freeze.', 'Ұйымдастырушылар форматындағы results.json: әр жинаққа бір файл, results/dev/ немесе results/prod/ ішіне салып, стоп-кодқа дейін push жасаңыз.'],
+  ['Нет импортированных наборов.', 'No imported sets.', 'Импортталған жинақ жоқ.'],
+  ['Проверить', 'Check', 'Тексеру'],
+  ['Скачать results.json', 'Download results.json', 'results.json жүктеу'],
+  ['Формат в порядке.', 'The format is valid.', 'Формат дұрыс.'],
   ['Да — оператор поздоровался на языке клиента и представился в первом ответе.', 'Yes — the operator greeted in the client’s language and introduced themselves in the first reply.', 'Иә — оператор клиенттің тілінде амандасып, бірінші жауабында өзін таныстырды.'],
   ['Прямой mp3 отдаёт бэкенд (GET /dialogs/:id/audio). Пока — внешний плеер.', 'The backend serves the mp3 (GET /dialogs/:id/audio). Use the external player for now.', 'mp3-ті бэкенд береді (GET /dialogs/:id/audio). Әзірге — сыртқы плеер.'],
 ];
@@ -466,6 +474,8 @@ const PATTERNS = [
   [/^(.+): выявлены в (\d+)% диалогов\.$/, '$1: found in $2% of dialogs.', '$1: диалогтардың $2%-ында анықталды.'],
   [/^не v(\d+)$/, 'not v$1', 'v$1 емес'],
   [/^([\d.]+) с$/, '$1 s', '$1 с'],
+  [/^(\d+) записей · (\d+) оценено · (\d+) с ошибкой$/, '$1 records · $2 evaluated · $3 with an error', '$1 жазба · $2 бағаланды · $3 қатемен'],
+  [/^Не оценены: (.+)$/, 'Not evaluated: $1', 'Бағаланбаған: $1'],
 ];
 
 // Fragments inside mixed strings (titles with data): applied after the whole-string lookup.

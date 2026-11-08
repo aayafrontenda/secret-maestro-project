@@ -105,12 +105,51 @@ export async function mountAnalytics(root) {
         stat('Грубые ошибки', items.filter(i => i.sc.grossErrors.length).length),
         stat('Апелляций', appeals.length, `изменено ${changed}`),
         stat('Устарели', items.filter(i => i.ev.checklist_version !== active.version).length, `не v${active.version}`))),
+      resultsBox,
       sideBlock('Экспорт',
         h('p', { class: 'cqa-muted' }, 'Ответы по каждому критерию и итог: удобно сверять с эталоном.'),
         h('button', { class: 'cqa-btn cqa-btn--outline cqa-btn--block', onclick: exportCsv }, icon('external', 16), 'Скачать CSV'),
         h('button', { class: 'cqa-btn cqa-btn--ghost cqa-btn--sm cqa-btn--left', onclick: exportJson }, icon('layers', 14), 'Скачать JSON')),
     ));
   }
+
+  // Organizers' results.json: pick the set, check it, download it into results/<dev|prod>/.
+  const resultsBox = h('section', { class: 'cqa-side-block' });
+  const R = { groups: [], group: null, check: null, busy: false };
+  async function loadResults() {
+    try { R.groups = await api.resultGroups(); } catch { R.groups = []; }
+    R.group = R.group ?? (R.groups.find(g => g.group_id && g.group_id !== 'DEV')?.group_id || R.groups[0]?.group_id || null);
+    fillResults();
+  }
+  async function runCheck() {
+    R.busy = true; fillResults();
+    try { R.check = await api.checkResults(R.group, R.group === 'DEV' ? 65 : undefined); }
+    catch (e) { R.check = { problems: [e.message] }; }
+    R.busy = false; fillResults();
+  }
+  function fillResults() {
+    const c = R.check && R.check.group_id === R.group ? R.check : null;
+    fill(resultsBox,
+      h('h2', null, 'Сдача результатов'),
+      h('p', { class: 'cqa-muted' }, 'results.json в формате организаторов: один файл на набор, положить в results/dev/ или results/prod/ и запушить до стоп-кода.'),
+      R.groups.length === 0
+        ? h('p', { class: 'cqa-muted' }, 'Нет импортированных наборов.')
+        : [
+            h('div', { class: 'cqa-seg-row' }, R.groups.map(g => h('button', {
+              class: `cqa-btn cqa-btn--sm ${g.group_id === R.group ? 'cqa-btn--primary' : 'cqa-btn--ghost'}`,
+              onclick: () => { R.group = g.group_id; R.check = null; fillResults(); },
+            }, `${g.group_id ?? '—'} · ${g.dialogs}`))),
+            h('button', { class: 'cqa-btn cqa-btn--outline cqa-btn--block', disabled: R.busy, onclick: runCheck }, icon(R.busy ? 'refresh' : 'check', 16, R.busy ? 'cqa-spin' : ''), 'Проверить'),
+            c && h('div', { class: `cqa-results-check ${c.problems?.length || c.errors ? 'is-bad' : 'is-ok'}` },
+              h('b', null, `${c.records} записей · ${c.ok} оценено · ${c.errors} с ошибкой`),
+              c.model && h('span', null, `model: ${c.model.mode} · ${c.model.name}`),
+              c.errors > 0 && h('span', null, `Не оценены: ${c.not_evaluated.slice(0, 6).join(', ')}${c.not_evaluated.length > 6 ? '…' : ''}`),
+              (c.problems || []).map(p => h('span', null, `! ${p}`)),
+              !c.problems?.length && !c.errors && h('span', null, 'Формат в порядке.')),
+            api.resultsUrl(R.group) && h('a', { class: 'cqa-btn cqa-btn--primary cqa-btn--block', href: api.resultsUrl(R.group), download: 'results.json' }, icon('layers', 16), 'Скачать results.json'),
+          ]);
+  }
+  loadResults();
 
   function exportCsv() {
     const crit = active.criteria;

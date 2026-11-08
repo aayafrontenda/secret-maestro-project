@@ -98,6 +98,40 @@ async def cmd_export_checklist(args: argparse.Namespace) -> None:
         print(text)
 
 
+async def cmd_export_results(args: argparse.Namespace) -> None:
+    """results.json in the organizers' format: the JSON to --out or stdout, problems to stderr."""
+    from app.services.results_export import build_results, validate
+
+    settings = get_settings()
+    await run_migrations(settings.database_url)
+    async with get_session_factory()() as session:
+        doc = await build_results(
+            session,
+            group_id=args.group_id,
+            team_name=args.team or settings.team_name,
+            mode=args.mode,
+            model_name=args.model,
+        )
+    text = json.dumps(doc, ensure_ascii=False, indent=2) + "\n"
+    if args.out:
+        out = Path(args.out)
+        await asyncio.to_thread(out.parent.mkdir, parents=True, exist_ok=True)
+        await asyncio.to_thread(out.write_text, text, encoding="utf-8")
+    else:
+        sys.stdout.write(text)
+    problems = validate(doc, args.expect)
+    ok = sum(r["status"] == "ok" for r in doc["results"])
+    print(
+        f"{len(doc['results'])} records ({ok} ok), model {doc['model']}"
+        + (f", written to {args.out}" if args.out else ""),
+        file=sys.stderr,
+    )
+    for p in problems:
+        print(f"  ! {p}", file=sys.stderr)
+    if problems:
+        raise SystemExit(1)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="python -m app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -115,12 +149,21 @@ def main(argv: list[str] | None = None) -> None:
     exp = sub.add_parser("export-checklist", help="print the default checklist as JSON")
     exp.add_argument("--out")
 
+    res = sub.add_parser("export-results", help="results.json in the organizers' format")
+    res.add_argument("--group-id", help="dataset group (DEV, the control id); all if omitted")
+    res.add_argument("--out", help="file to write, e.g. ../results/dev/results.json; else stdout")
+    res.add_argument("--team", help="team_name (TEAM_NAME by default)")
+    res.add_argument("--mode", choices=["local", "external_api", "hybrid"], help="model.mode")
+    res.add_argument("--model", help="override model.name")
+    res.add_argument("--expect", type=int, help="expected number of records (10 for prod)")
+
     args = parser.parse_args(argv)
     handler = {
         "migrate": cmd_migrate,
         "seed": cmd_seed,
         "evaluate-all": cmd_evaluate_all,
         "export-checklist": cmd_export_checklist,
+        "export-results": cmd_export_results,
     }[args.command]
 
     async def runner() -> None:

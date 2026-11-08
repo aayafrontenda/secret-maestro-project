@@ -63,6 +63,8 @@ class MLCriterionResult(BaseModel):
 class MLModelInfo(BaseModel):
     provider: str = "unknown"
     name: str = "unknown"
+    # The ML service may grade criteria without built-in rules with another model.
+    generic_name: str | None = None
 
 
 class MLUsage(BaseModel):

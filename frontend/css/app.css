@@ -21,11 +21,11 @@
 .cqa-muted { font-size: 13px; color: var(--cqa-ink-2); line-height: 1.45; }
 
 /* ===== Каркас приложения: меню | контент ===== */
-.cqa-app { display: grid; grid-template-columns: 72px minmax(0, 1fr); height: 100vh; overflow: hidden; }
+.cqa-app { display: grid; grid-template-columns: 72px minmax(0, 1fr); height: 100vh; overflow: hidden; transition: grid-template-columns .2s ease; }
 .cqa-main { position: relative; min-width: 0; height: 100%; overflow: hidden; }
 .cqa-loading { display: flex; align-items: center; gap: 10px; padding: 32px; color: var(--cqa-ink-2); }
 
-/* ----- Левое меню (свёрнуто до иконок, раскрыто от 1600px) ----- */
+/* ----- Левое меню: свёрнуто до иконок с подсказками или раскрыто до названий (кнопка внизу) ----- */
 .cqa-rail {
   display: flex; flex-direction: column; gap: 20px; padding: 16px 12px;
   border-right: 1px solid var(--cqa-line); background: #fff; min-width: 0; z-index: 2;
@@ -53,12 +53,37 @@
   transition: background-color .25s, color .25s, box-shadow .25s;
 }
 .cqa-role button[aria-pressed='true'] { background: #fff; color: var(--cqa-ink); font-weight: 500; box-shadow: 0 2px 8px rgba(16, 42, 67, .08); }
-@media (min-width: 1600px) {
-  .cqa-app { grid-template-columns: 220px minmax(0, 1fr); }
-  .cqa-brand { justify-content: flex-start; padding: 4px 6px; }
-  .cqa-brand-text { display: flex; }
-  .cqa-nav a, .cqa-role button { justify-content: flex-start; padding: 0 11px; }
-  .cqa-nav a span, .cqa-role button span, .cqa-rail-label { display: inline; }
+.cqa-rail-toggle {
+  display: flex; align-items: center; justify-content: center; gap: 12px; height: 36px; padding: 0; border: 0; border-radius: 10px;
+  background: transparent; color: var(--cqa-ink-2); cursor: pointer; font-size: 13.5px; white-space: nowrap;
+  transition: background-color .25s, color .25s;
+}
+.cqa-rail-toggle:hover { background: var(--cqa-surface); color: var(--cqa-ink); }
+.cqa-rail-toggle span { display: none; }
+
+.cqa-app.is-rail-open { grid-template-columns: 220px minmax(0, 1fr); }
+/* names appear at once while the column is still widening: clip them sideways until it is wide */
+.cqa-app.is-rail-open .cqa-rail { overflow-x: clip; }
+.cqa-app.is-rail-open .cqa-brand { justify-content: flex-start; padding: 4px 6px; }
+.cqa-app.is-rail-open .cqa-brand-text { display: flex; }
+.cqa-app.is-rail-open .cqa-nav a, .cqa-app.is-rail-open .cqa-role button, .cqa-app.is-rail-open .cqa-rail-toggle { justify-content: flex-start; padding: 0 11px; }
+.cqa-app.is-rail-open .cqa-nav a span, .cqa-app.is-rail-open .cqa-role button span,
+.cqa-app.is-rail-open .cqa-rail-label, .cqa-app.is-rail-open .cqa-rail-toggle span { display: inline; }
+
+/* Tooltips on the collapsed rail: the name from aria-label, to the right of the button */
+.cqa-has-tip { position: relative; }
+.cqa-app:not(.is-rail-open) .cqa-rail .cqa-has-tip::after {
+  content: attr(aria-label); position: absolute; left: calc(100% + 12px); top: 50%; z-index: 50;
+  transform: translate(-4px, -50%); padding: 6px 10px; border-radius: 8px;
+  background: var(--cqa-dark); color: #fff; font-size: 12.5px; font-weight: 500; line-height: 1.2; white-space: nowrap;
+  box-shadow: 0 6px 18px -6px rgba(16, 42, 67, .35);
+  pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .12s, transform .12s, visibility .12s;
+}
+.cqa-app:not(.is-rail-open) .cqa-rail .cqa-has-tip:hover::after,
+.cqa-app:not(.is-rail-open) .cqa-rail .cqa-has-tip:focus-visible::after { opacity: 1; visibility: visible; transform: translate(0, -50%); }
+.cqa-app:not(.is-rail-open) .cqa-role .cqa-has-tip::after { left: calc(100% + 16px); }
+@media (prefers-reduced-motion: reduce) {
+  .cqa-app, .cqa-app .cqa-rail .cqa-has-tip::after { transition: none; }
 }
 
 /* ===== Кнопки (по мотивам кнопок fbroker.kz) ===== */
@@ -673,3 +698,21 @@ a.cqa-tr.is-done .cqa-td--0 b { color: var(--cqa-ink-2); font-weight: 600; }
 /* Interface language */
 .cqa-lang-btn { display: inline-flex; align-items: center; justify-content: center; gap: 5px; height: 30px; padding: 0 8px; border-radius: 10px; border: 1px solid var(--cqa-line); background: var(--cqa-bg); color: var(--cqa-ink-2); font-size: 12px; font-weight: 600; cursor: pointer; }
 .cqa-lang-btn:hover { color: var(--cqa-ink); border-color: var(--cqa-line-2); }
+
+/* Rail on narrow screens: always a bar of icons, whatever was chosen on a wide one; no tooltips */
+@media (max-width: 860px) {
+  .cqa-app, .cqa-app.is-rail-open { grid-template-columns: minmax(0, 1fr); }
+  .cqa-app.is-rail-open .cqa-rail { overflow-x: visible; }
+  .cqa-app.is-rail-open .cqa-brand-text, .cqa-app.is-rail-open .cqa-nav a span, .cqa-app.is-rail-open .cqa-role button span,
+  .cqa-app.is-rail-open .cqa-rail-label { display: none; }
+  .cqa-app.is-rail-open .cqa-nav a, .cqa-app.is-rail-open .cqa-role button { justify-content: center; padding: 0; }
+  .cqa-rail-toggle { display: none; }
+  /* no hover on touch screens, and a hidden tooltip near the edge would still widen the page */
+  .cqa-app .cqa-rail .cqa-has-tip::after { display: none; }
+}
+
+/* Organizers' results.json */
+.cqa-seg-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.cqa-results-check { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--cqa-r-md); font-size: 12.5px; }
+.cqa-results-check.is-ok { background: var(--cqa-mint-bg); color: var(--cqa-green-ink); }
+.cqa-results-check.is-bad { background: var(--cqa-amber-bg); color: var(--cqa-amber-ink); }

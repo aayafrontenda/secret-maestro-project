@@ -30,6 +30,16 @@ One dialog takes 30–40 s, so 10 dialogs take about 6–7 minutes.
 3. **Evaluate.** Dialogs page → "Оценить новые". Progress is shown on the page and survives a closed tab.
 4. **Check.** Open two or three dialogs: answers, explanations, evidence, the replaced criterion.
 5. **Export.** Analytics page → "Экспорт" (CSV or JSON).
+6. **Submit `results/prod/results.json`** (organizers' format 1.0, must be pushed before the code freeze;
+   evaluate the 10 dialogs on the **original eight criteria**, the replaced criterion is a separate check):
+   ```
+   curl.exe "http://localhost:8000/api/results/check?group_id=<control id>&expected=10"
+   curl.exe "http://localhost:8000/api/results?group_id=<control id>&download=true" -o results/prod/results.json
+   git add results && git commit -m "chore: control set results" && git push
+   ```
+   `check` must show `"ok": 10` and `"problems": []`. The same from the UI: Analytics → «Сдача результатов» →
+   pick the set → «Проверить» → «Скачать results.json». Use `curl.exe` or the button, not PowerShell `>`
+   (it writes UTF-16). `results/dev/results.json` is made the same way with `group_id=DEV&expected=65`.
 
 ## If something goes wrong
 
