@@ -15,7 +15,7 @@ from .presets import extra_guidelines, match_standard
 from .probes import Context
 from .rules import DECIDERS, Decision
 from .schemas import Message, Transcript
-from .texts import rationale
+from .texts import basis, rationale
 
 LANGUAGES = {"RU": "ru", "KZ": "kk", "KK": "kk", "EN": "en"}
 
@@ -147,13 +147,18 @@ def _checked_range(ctx: Context, decision: Decision, preset_id: str) -> Range | 
 
 def _standard_result(ctx: Context, criterion: Criterion, preset_id: str, language: str) -> CriterionResult:
     decision = DECIDERS[preset_id](ctx)
+    checked = _checked_range(ctx, decision, preset_id)
+    # Messages are numbered from 1 in the text, as the UI shows them; the evidence field keeps the indexes.
+    cited = [(_index(i) + 1, m.role.value) for i in decision.evidence if (m := ctx.message(i))]
+    span = (checked.from_index + 1, checked.to_index + 1) if checked else None
     text = rationale(preset_id, decision.answer, decision.facts, decision.na_reason, language)
+    text = f"{text} {basis(cited, span, language)}".strip()
     return CriterionResult(
         code=criterion.code,
         answer=_fit_answer(decision.answer, criterion),
         explanation=text,
         evidence=[_index(i) for i in decision.evidence],
-        checked_range=_checked_range(ctx, decision, preset_id),
+        checked_range=checked,
         na_reason=text if decision.answer == "na" else None,
         method="standard",
         standard_id=preset_id,

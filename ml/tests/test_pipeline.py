@@ -63,9 +63,12 @@ def test_evidence_is_taken_from_the_transcript():
 def test_rationale_language():
     result = score_transcript(transcript(), FakeLLM(GOOD), output_language="kk")
     c02 = next(c for c in result.criteria if c.criterion_id == "02")
-    assert c02.rationale == "Жауап беру үшін деректер басынан-ақ жеткілікті болды."
+    assert c02.rationale == "Қажеттілікті анықтау — N/A. Жауап беру үшін деректер басынан-ақ жеткілікті болды."
     result = score_transcript(transcript(), FakeLLM(GOOD), output_language="en")
-    assert result.criteria[0].rationale.startswith("Greeted in the first reply: yes")
+    assert result.criteria[0].rationale == (
+        "Establishing contact — Yes. In the first reply the operator greeted the client, introduced themselves "
+        "and replied in the client's language."
+    )
 
 
 def test_gross_flag_requires_an_operator_message():

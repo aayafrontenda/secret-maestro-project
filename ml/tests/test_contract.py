@@ -63,9 +63,23 @@ def test_response_follows_the_contract():
 
 def test_explanations_follow_the_dialog_language():
     response = evaluate(request(language="KZ"), FakeLLM(ANSWERS))
-    assert response.results[1].explanation == "Жауап беру үшін деректер басынан-ақ жеткілікті болды."
+    assert response.results[1].explanation.startswith(
+        "Қажеттілікті анықтау — N/A. Жауап беру үшін деректер басынан-ақ жеткілікті болды. Негіз — клиент репликасы #"
+    )
     response = evaluate(request(language="EN"), FakeLLM(ANSWERS))
-    assert response.results[1].explanation.startswith("The information")
+    assert response.results[1].explanation.startswith("Needs discovery — N/A. The information")
+
+
+def test_explanations_follow_the_checklist_example():
+    # The PDF's example: "Завершение — Нет. После ответа на вопрос оператор закрыл чат без прощания. Основание — …"
+    answers = {**ANSWERS, "offered_help": False, "summarized": False}
+    c7 = evaluate(request([CHECKLIST[6]]), FakeLLM(answers)).results[0]
+    assert c7.answer == "no"
+    assert c7.explanation.startswith(
+        "Завершение — Нет. Оператор попрощался, но не подвёл итог и не предложил дальнейшую помощь. Основание — реплика оператора #6."
+    )
+    c4 = evaluate(request([CHECKLIST[3]]), FakeLLM(ANSWERS)).results[0]
+    assert c4.explanation.startswith("Корректная и полная консультация — 20 из 20. Все существенные вопросы закрыты")
 
 
 def test_missed_first_reply_points_at_the_operator_message():
